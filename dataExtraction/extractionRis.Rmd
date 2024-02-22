@@ -1,0 +1,41 @@
+
+
+
+```{r}
+source("../functions/risManagement/readRis.R")
+fileTot<-"../../Data/SCOPUS/tot.ris"
+if(!file.exists(fileTot)){
+risFilesScopus<- paste0("../../Data/SCOPUS/",c("appliedvegetationscience_scopus.ris","journalofvegetationscience_scopus.ris","vegetationclassificationandsurvey_scopus.ris"))
+extractedRiss <- lapply(risFilesScopus, read_ris)
+writeLines(unlist(lapply(extractedRiss,function(x)x$raw)),fileTot)
+}  
+tot_extracted<-read_ris(fileTot)
+```
+
+What are the fields we have access to in these files:
+
+```{r}
+(ctFields<-table(tot_extracted$fieldName))
+fields<-names(ctFields)
+w_5<-lapply(fields,function(x,w){
+  A<-which(w==x)
+  sample(A,5)
+},w=tot_extracted$fieldName)
+names(w_5)<-fields
+lapply(w_5,function(x,r){
+  text<-r[x]
+  sup50<-nchar(text)>50
+  if(any(sup50)){
+    text[sup50]<-sapply(text[sup50],function(x)paste(substr(x,1,50),"[...]"))
+  }
+  return(text)
+},r=tot_extracted$raw)
+```
+
+
+
+
+```{r}
+tot_extracted$fieldName
+```
+
