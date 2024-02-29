@@ -1,11 +1,21 @@
+---
+title: "First exercise of extraction from Ris files"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+---
 
 
-
+# Scopus
 ```{r}
 source("../functions/risManagement/readRis.R")
+source("../functions/risManagement/extractFields.R")
 fileTot<-"../../Data/SCOPUS/tot.ris"
 if(!file.exists(fileTot)){
-risFilesScopus<- paste0("../../Data/SCOPUS/",c("appliedvegetationscience_scopus.ris","journalofvegetationscience_scopus.ris","vegetationclassificationandsurvey_scopus.ris"))
+risFilesScopus<- paste0("../../Data/SCOPUS/",c("JVS-3476.ris","AVS-1326.ris","VCS-94.ris"))
 extractedRiss <- lapply(risFilesScopus, read_ris)
 writeLines(unlist(lapply(extractedRiss,function(x)x$raw)),fileTot)
 }  
@@ -36,6 +46,73 @@ lapply(w_5,function(x,r){
 
 
 ```{r}
-tot_extracted$fieldName
+sum(grepl("^ *Location:",tot_extracted$raw))
+sum(grepl("Location:",tot_extracted$raw))
+sum(grepl("Locations?:",tot_extracted$raw))
+
+```
+
+# Web of science
+
+
+```{r}
+source("../functions/risManagement/readRis.R")
+fileTot<-"../../Data/Web of Science/tot.ris"
+if(!file.exists(fileTot)){
+risFilesScopus<- paste0("../../Data/Web of Science/",c("appliedvegetationscience_0to1000_wos.ris","appliedvegetationscience_1001to1333_wos.ris","journalofvegetationscience_0to1000_wos.ris","journalofvegetationscience_1001to2000_wosris","journalofvegetationscience_2001to3000_wos.ris","journalofvegetationscience_3001to3490_wos.ris"))
+extractedRiss <- lapply(risFilesScopus, read_ris)
+writeLines(unlist(lapply(extractedRiss,function(x)x$raw)),fileTot)
+}  
+tot_extracted<-read_ris(fileTot)
+```
+
+```{r}
+(ctFields<-table(tot_extracted$fieldName))
+fields<-names(ctFields)
+w_5<-lapply(fields,function(x,w){
+  A<-which(w==x)
+  sample(A,5)
+},w=tot_extracted$fieldName)
+names(w_5)<-fields
+lapply(w_5,function(x,r){
+  text<-r[x]
+  sup50<-nchar(text)>50
+  if(any(sup50)){
+    text[sup50]<-sapply(text[sup50],function(x)paste(substr(x,1,50),"[...]"))
+  }
+  return(text)
+},r=tot_extracted$raw)
+```
+```{r}
+sum(grepl("^ *Location:",tot_extracted$raw))
+sum(grepl("Location:",tot_extracted$raw))
+sum(grepl("Locations?:",tot_extracted$raw))
+sum(grepl("Locations? ?:",tot_extracted$raw))
+tot_extracted$raw[grepl("Locations? ?:",tot_extracted$raw)]
+```
+
+Which records do not have location:
+
+```{r}
+regLoc <- tot_extracted$lineRegId[grepl("Locations? ?:",tot_extracted$raw)]
+reg <- 1:max(tot_extracted$lineRegId)
+#With location
+table(tot_extracted$content[!is.na(tot_extracted$fieldName) & tot_extracted$fieldName=="T2" & tot_extracted$lineRegId %in%regLoc])
+#Without location
+table(tot_extracted$content[!is.na(tot_extracted$fieldName) & tot_extracted$fieldName=="T2" & !tot_extracted$lineRegId %in%regLoc])
+
+tab<-extractFields(tot_extracted,fields =c("DO","PY","T2"))
+tab$PY<-factor(tab$PY,levels=min(as.numeric(tab$PY),na.rm=T):max(as.numeric(tab$PY),na.rm=T))
+tabYear<-table(tab$T2,tab$PY)
+tabYearSinLoc<-table(tab$T2[!reg%in%regLoc],tab$PY[!reg%in%regLoc])
+
+barplot(tabYear,beside = T, legend=T)
+barplot(tabYearSinLoc,beside=T,add=T,col="red")
+
+
+#With location
+#table(tot_extracted$content[!is.na(tot_extracted$fieldName) & tot_extracted$fieldName=="PY"],tot_extracted$content[tot_extracted$lineRegId %in%regLoc])
+#Without location
+#table(tot_extracted$content[!is.na(tot_extracted$fieldName) & tot_extracted$fieldName=="PY"],tot_extracted$content[tot_extracted$lineRegId %in%regLoc])
 ```
 

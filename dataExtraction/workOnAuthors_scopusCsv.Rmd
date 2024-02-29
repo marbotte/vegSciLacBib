@@ -1,0 +1,78 @@
+---
+title: "Managing the author data from the scopus CSV file"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+---
+
+
+# Reading the csv file
+```{r}
+fileTot<-"../../Data/SCOPUS/scopus.csv"
+datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
+```
+
+# Authors full names and identifiers
+
+The colum `Author.full.names` include the full name and a scopus identifier.
+
+```{r}
+sepAuthors <- strsplit(datab$Author.full.names,"; ")
+```
+
+## Extraction with regular expression
+
+```{r}
+regexCompAuth<- "^(.+),(.+) \\(([0-9]+)\\)$"
+```
+
+It appears three authors have only a last name:
+
+```{r}
+sepAuthors[!sapply(sapply(sepAuthors,grepl,pattern=regexCompAuth),all)]
+```
+```{r}
+regexNoFirst<- "^(.+) \\(([0-9]+)\\)$"
+
+treatedFullNames <- lapply(sepAuthors,function(x,r1,r2)
+{
+  stopifnot(grepl(r1,x)|grepl(r2,x))
+  regexOk <- grepl(r1,x)
+  verbatim <- x
+  lastName <- gsub(r1,"\\1",x)
+  firstName <- gsub(r1,"\\2",x)
+  authorId <- gsub(r1,"\\3",x)
+  if(any(!regexOk))
+  lastName[!regexOk] <- gsub(r2,"\\1",x[!regexOk])
+  firstName[!regexOk] <- NA
+  authorId[!regexOk] <- gsub(r2,"\\2",x[!regexOk])
+  return(data.frame(
+    verbatim=verbatim,
+    lastName=lastName,
+    firstName=firstName,
+    authorId=authorId
+    ))
+},r1=regexCompAuth,r2=regexNoFirst)
+```
+
+
+
+
+# tests
+
+```{r}
+sepAbbAuthors <- strsplit(datab$Authors,"; ")
+all(sapply(sepAbbAuthors,length) == sapply(sepAuthors,length))
+
+allInOne<-Reduce(rbind,treatedFullNames)
+length(unique(allInOne$authorId))
+A<-tapply(allInOne$verbatim,allInOne$authorId,unique)
+A[sapply(A,length)>1]
+B<-tapply(allInOne$lastName,allInOne$authorId,unique)
+B[sapply(B,length)>1]
+```
+
+
