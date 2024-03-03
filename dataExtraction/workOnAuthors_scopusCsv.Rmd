@@ -26,7 +26,7 @@ sepAuthors <- strsplit(datab$Author.full.names,"; ")
 ## Extraction with regular expression
 
 ```{r}
-regexCompAuth<- "^(.+),(.+) \\(([0-9]+)\\)$"
+regexCompAuth<- "^(.+), (.+) \\(([0-9]+)\\)$"
 ```
 
 It appears three authors have only a last name:
@@ -65,6 +65,13 @@ treatedFullNames <- lapply(sepAuthors,function(x,r1,r2)
 
 ```{r}
 sepAbbAuthors <- strsplit(datab$Authors,"; ")
+regexAbbAuthors <- "^.+ ((-?[A-Z]?[a-z]?\\.)+)$"
+regexAbbAuthors <- "^.+ ([.[:alpha:]-]+)$"
+
+sepAbbAuthors[sapply(sapply(sapply(sepAbbAuthors,grepl,pattern=regexAbbAuthors,perl=T),`!`),any)]
+
+
+
 all(sapply(sepAbbAuthors,length) == sapply(sepAuthors,length))
 
 allInOne<-Reduce(rbind,treatedFullNames)

@@ -1,0 +1,314 @@
+---
+title: "Managing the affiliation data from the scopus CSV file"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+---
+
+
+# Reading the csv file
+```{r}
+fileTot<-"../../Data/SCOPUS/scopus.csv"
+datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
+```
+
+# The affiliation column
+
+The column `Authors.with.affiliations` allows to link authors and institutions
+
+
+```{r}
+head(datab$Authors.with.affiliations)
+sepAffil <- lapply(strsplit(datab$Authors.with.affiliations,"; "),strsplit,", ")
+```
+
+
+There are various problems with the separating fields operation here:
+
+* when there are comma in an expression (e.g faculty of plant, animal and ecology)...
+* when there are opening parenthesis
+
+## Parenthesis problem
+
+Concerning the parentheses:
+
+Let's try and find the closing parentheses which are not associated with opening parenthesis:
+
+```{r}
+pbI<-integer()
+pbJ<-integer()
+pbK<-integer()
+for(i in 1:length(sepAffil))
+{
+  if(length(sepAffil[[i]])==0){next}
+  for(j in 1:length(sepAffil[[i]]))
+  {
+    A<-grep("^[^(]+\\)",sepAffil[[i]][[j]])
+    pbI<-c(pbI,rep(i,length(A)))
+    pbJ<-c(pbJ,rep(j,length(A)))
+    pbK<-c(pbK,A)
+  }
+}
+```
+
+Showing the problems
+
+```{r}
+for(i in 1:length(pbI))
+{
+  print(sepAffil[[pbI[i]]][[pbJ[i]]])
+}
+```
+
+
+Finding the potential resolutions:
+
+```{r}
+resolK<-integer(length(pbI))
+resolJK<-integer(length(pbI))
+for(i in 1:length(pbI))
+{
+  A<-grep("\\([^)]+$",sepAffil[[pbI[i]]][[pbJ[i]]][1:pbK[[i]]])
+  if(length(A)!=0){
+    resolK[i]<-A[length(A)]
+    resolJK[i]<-pbJ[i]
+  }else{
+    if(pbJ[i]>1){
+      A<-grep("\\([^)]+$",sepAffil[[pbI[i]]][[pbJ[i]-1]])
+      if(length(A)!=0){
+        resolK[i]<-A[length(A)]
+        resolJK[i]<-pbJ[i]-1
+      }else{
+        resolK[i]<-NA
+        resolJK[i]<-NA
+      }
+    }else{
+      resolK[i]<-NA
+      resolJK[i]<-NA
+    }
+  }
+}
+```
+
+Showing the resolution
+```{r}
+for(i in 1:length(pbI))
+{
+  cat("problem",i,":",pbI[i],ifelse(is.na(resolJK[i])|resolJK[i]==pbJ[i],pbJ[i],paste(resolJK[i],pbJ[i],sep="-")),pbK[i],"resol:",resolK[i],"\n")
+  print(sepAffil[[pbI[i]]][unique(c(resolJK[i],pbJ[i]))])
+  cat("Resolution:\n")
+  if(!is.na(resolK[i])&pbJ[i]==resolJK[i])
+  {
+    print(paste(sepAffil[[pbI[i]]][[pbJ[i]]][resolK[i]:pbK[i]],collapse=", "))
+    cat("\n\n")
+  }else{
+    if(!is.na(resolK[i])&pbJ[i]!=resolJK[i])
+    {
+      print(paste(c(sepAffil[[pbI[i]]][[resolJK[i]]][resolK[i]:length(sepAffil[[pbI[i]]][[resolJK[i]]])],
+                    sepAffil[[pbI[i]]][[pbJ[i]]][1:pbK[i]])
+                    ,collapse=", "))
+      cat("\n\n")
+    }else{
+      cat("!!!!! No solution !!!!!!!!!!\n\n")}
+  }
+}
+```
+
+Applying resolution:
+
+```r
+for(i in 1:length(pbI))
+{
+  if(is.na(resolJK[i])){next}
+  # same J (author)
+  if(pbJ[i]==resolJK[i]){
+  ## prepare the resolution (sep by ",")
+    sepAffil[[pbI[i]]][[pbJ[i]]][resolK[i]] <- paste(sepAffil[[pbI[i]]][[pbJ[i]]][resolK[i]:pbK[i]], collapse = ", ")
+  ## suppress the affected K
+    toSuppress<-(resolK[i]+1):pbK[i]
+    sepAffil[[pbI[i]]][[pbJ[i]]]<-sepAffil[[pbI[i]]][[pbJ[i]]][-toSuppress]
+  ## if any other problems in the same J, later K change numbers of problems and resolutions
+    w_same<-which(pbI==pbI[i]&pbJ==pbJ[i])
+    w_same<-w_same[w_same>i]
+    if(length(w_same)>0)
+    {
+      pbK[w_same]<-pbK[w_same]-length(toSuppress)
+      resolK[w_same]<-resolK[w_same]-length(toSuppress)
+    }
+  }
+  
+  # (wrongly) different J 
+  ## prepare the resolution (J sep by ";", K sep by ","), followed by wrongly affected different j
+  ## suppress the affected k and j
+  ## if any other problem in the same I, change J and K numbers
+
+}
+```
+The difficulty is that the numbers of elements from the list depends on the corrections we make... Then maybe doing everything in a ´while´ loop (to be able to control better the counters) might result better
+
+```{r}
+keep<-sepAffil
+checkItOut<-data.frame(i=integer(0),j=integer(0),k=integer(0))
+i<-1
+while(i<=length(sepAffil))
+{
+  #cat("i",i,"\n")
+  if(length(sepAffil[[i]])==0){i<-i+1}
+  j<-1
+  while(j<=length(sepAffil[[i]]))
+  {
+    #cat("j",j,"\n")
+    k<-1
+    while(k<=length(sepAffil[[i]][[j]]))
+    {
+      #cat("k",k,"\n")
+      if(any(grepl("\\([^)]+$",sepAffil[[i]][[j]][k:length(sepAffil[[i]][[j]])])))
+      {
+        w<-grep("\\([^)]+$",sepAffil[[i]][[j]])
+        k<-w[w>=k]
+        cat("i",i,"j",j,"k",k,"...")
+        checkItOut<-rbind(checkItOut,data.frame(i=i,j=j,k=k))
+        # Do everything here
+        closingParenthesis <- grep("^[^(]+\\)",sepAffil[[i]][[j]])
+        if(length(closingParenthesis)>0){
+          cl<-closingParenthesis[1]
+          sepAffil[[i]][[j]][k]<-paste(sepAffil[[i]][[j]][k:cl],collapse=", ", sep=", ")
+          toSupp <- (k+1):cl
+          sepAffil[[i]][[j]]<-sepAffil[[i]][[j]][-toSupp]
+          cat("done\n")
+        }else{
+          j2<-j+1
+          closingParenthesis <- grep("^[^(]+\\)",sepAffil[[i]][[j2]])
+          if(length(closingParenthesis)>0){
+            cl<-closingParenthesis[1]
+            sepAffil[[i]][[j]][k]<-
+              paste(
+                paste(sepAffil[[i]][[j]][k:length(sepAffil[[i]][[j]])],collapse=", ", sep=", "),
+                paste(sepAffil[[i]][[j2]][1:cl],collapse=", ", sep=", ")
+                ,sep="; ")
+            if(length(sepAffil[[i]][[j]])>k){
+              toSupp <- (k+1):length(sepAffil[[i]][[j]])
+              sepAffil[[i]][[j]]<-sepAffil[[i]][[j]][-toSupp]
+            }
+            sepAffil[[i]][[j]]<-c(sepAffil[[i]][[j]],sepAffil[[i]][[j2]][(cl+1):length(sepAffil[[i]][[j2]])])
+            sepAffil[[i]]<-sepAffil[[i]][-j2]
+            cat("done next\n")
+          }else{
+            cat("unresolved\n")
+          }
+        }
+        k<-k+1
+      }else{k<-length(sepAffil[[i]][[j]])+1}
+    }
+      
+    j<-j+1
+  }
+  i<-i+1
+  #cat("n\n")
+}
+```
+
+
+```{r}
+ln_affil <- sapply(sepAffil,sapply,length)
+tabAffil<-data.frame(
+  doc=rep(1:length(sepAffil),sapply(ln_affil,function(x)ifelse(length(x)==0,0,sum(x)))),
+  auth=unlist(lapply(sepAffil[sapply(sepAffil,length)>0],function(x)rep(1:length(x),sapply(x,length)))),
+  string=unlist(sepAffil)
+)
+```
+
+One easy thing to do which could help us make sense of the data here would be to recognize all country fields. Then we could maybe have an idea of the number of affiliations by authors...
+That would mean downloading a dataset that contains all country names, in various languages in case!
+
+
+```{r}
+require(rnaturalearth)
+require(rnaturalearthdata)
+require(sf)
+worldMap_tot<-ne_countries(returnclass = "sf")
+tinyCountries<-ne_download(type="admin_0_tiny_countries",returnclass = "sf")
+
+colnames(worldMap_tot)[grepl("name",colnames(worldMap_tot))]
+head(worldMap_tot)
+colnames(tinyCountries)
+names_toKeep<-c("formal_en","name","name_long","name_en","name_es","name_pt","name_fr")
+toupper(names_toKeep) %in% colnames(tinyCountries)
+countryNames<-Reduce(rbind,lapply(names_toKeep,function(x,t1,t2,t3){
+  tab1<-data.frame(string=st_drop_geometry(t1[,x]),name=st_drop_geometry(t1["name"]),type=x)
+  tab2<-data.frame(string=st_drop_geometry(t2[,toupper(x)]),name=st_drop_geometry(t2["NAME"]),type=x)
+  if(x%in%colnames(t3)){
+    tab3<-data.frame(string=st_drop_geometry(t3[,x]),name=st_drop_geometry(t3["name"]),type=x)
+  }else{
+    tab3<-data.frame(string=character(0),name=character(0),type=character(0))
+  }
+  colnames(tab1)<-colnames(tab2)<-colnames(tab3)<-c("string","name","type")
+  return(rbind(tab1,tab2,tab3))},t1=worldMap_tot,t2=tinyCountries,t3=map_units50))
+countryNames[!duplicated(countryNames$string),]
+countryNames<-rbind(countryNames,
+                    data.frame(
+                      string=c("Democratic Republic Congo","Cote d'Ivoire"),
+                      name=c("Dem. Rep. Congo","Côte d'Ivoire"),
+                      type="manual"
+                    ))
+list_countryAffil<-list()
+for(i in 1:length(sepAffil)){
+  list_countryAffil[[i]]<-list()
+  if(length(sepAffil[[i]])==0)next
+  for(j in 1:length(sepAffil[[i]]))
+  {
+    list_countryAffil[[i]][[j]]<-sepAffil[[i]][[j]]%in%countryNames$string
+  }
+}
+nbCountriesByAuthors<-lapply(list_countryAffil,sapply,sum)
+noCountry<-sapply(nbCountriesByAuthors,function(x)which(x==0))
+nb_noCountry<-sapply(noCountry,function(x)length(x))
+tabNoCountryRef<-data.frame(
+  doc=rep(which(nb_noCountry!=0),nb_noCountry[nb_noCountry>0]),
+  auth=unlist(noCountry)
+)
+apply(tabNoCountryRef,1,function(x,l)l[[x[1]]][[x[2]]],l=sepAffil)
+```
+
+
+# Cities
+
+```{r}
+require(geojsonR)
+cityData <- FROM_GeoJson("../../Data/geog/geonames-all-cities-with-a-population-1000.geojson")
+namesCity1<-data.frame(string=sapply(cityData$features,function(x)x$properties$name),
+                       name=sapply(cityData$features,function(x)x$properties$name),
+                       country=sapply(cityData$features,function(x) ifelse(length(x$properties$cou_name_en)==0,NA,x$properties$cou_name_en)),
+                       population=sapply(cityData$features,function(x)x$properties$population)
+)
+alternateNames<-lapply(cityData$features,function(x)unlist(x$properties$alternate_names))
+alterNameCity<-data.frame(string=unlist(alternateNames),
+           name=rep(namesCity1$string,sapply(alternateNames,length)),
+           country=rep(namesCity1$country,sapply(alternateNames,length)),
+           population=rep(namesCity1$population,sapply(alternateNames,length))
+)
+cityTab<-rbind(namesCity1,alterNameCity)
+cityTab<-cityTab[order(cityTab$population,decreasing = T),]
+```
+
+```r
+list_cityAffil<-list()
+for(i in 1:length(sepAffil)){
+  list_cityAffil[[i]]<-list()
+  if(length(sepAffil[[i]])==0)next
+  for(j in 1:length(sepAffil[[i]]))
+  {
+    list_cityAffil[[i]][[j]]<-sepAffil[[i]][[j]]%in%cityTab$string
+  }
+}
+```
+
+```{r}
+tabAffil$country<-tabAffil$string%in%countryNames$string
+tabAffil$city<-tabAffil$string%in%cityTab$string
+write.csv(tabAffil,file="../../vegSciLacBib_export/tabAffil.csv")
+```
+
