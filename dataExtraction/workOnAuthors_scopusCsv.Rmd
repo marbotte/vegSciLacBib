@@ -8,10 +8,10 @@ output:
      toc: true
 ---
 
-
 # Reading the csv file
+
 ```{r}
-fileTot<-"../../Data/SCOPUS/scopus.csv"
+fileTot<-"/Users/mariadaniela/Desktop/bibliometrics/scopus.csv"
 datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
 ```
 
@@ -34,6 +34,7 @@ It appears three authors have only a last name:
 ```{r}
 sepAuthors[!sapply(sapply(sepAuthors,grepl,pattern=regexCompAuth),all)]
 ```
+
 ```{r}
 regexNoFirst<- "^(.+) \\(([0-9]+)\\)$"
 
@@ -58,9 +59,6 @@ treatedFullNames <- lapply(sepAuthors,function(x,r1,r2)
 },r1=regexCompAuth,r2=regexNoFirst)
 ```
 
-
-
-
 # tests
 
 ```{r}
@@ -81,5 +79,3 @@ A[sapply(A,length)>1]
 B<-tapply(allInOne$lastName,allInOne$authorId,unique)
 B[sapply(B,length)>1]
 ```
-
-
