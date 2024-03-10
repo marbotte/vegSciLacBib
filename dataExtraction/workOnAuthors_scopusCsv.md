@@ -1,14 +1,17 @@
 Managing the author data from the scopus CSV file
 ================
 Marius Bottin
-2024-02-29
+2024-03-09
 
 - [1 Reading the csv file](#1-reading-the-csv-file)
 - [2 Authors full names and
   identifiers](#2-authors-full-names-and-identifiers)
   - [2.1 Extraction with regular
     expression](#21-extraction-with-regular-expression)
-- [3 tests](#3-tests)
+- [3 Relationships between complete author names and author
+  names](#3-relationships-between-complete-author-names-and-author-names)
+- [4 Clean extraction](#4-clean-extraction)
+- [5 tests](#5-tests)
 
 # 1 Reading the csv file
 
@@ -29,7 +32,7 @@ sepAuthors <- strsplit(datab$Author.full.names,"; ")
 ## 2.1 Extraction with regular expression
 
 ``` r
-regexCompAuth<- "^(.+),(.+) \\(([0-9]+)\\)$"
+regexCompAuth<- "^(.+), (.+) \\(([0-9]+)\\)$"
 ```
 
 It appears three authors have only a last name:
@@ -78,10 +81,697 @@ treatedFullNames <- lapply(sepAuthors,function(x,r1,r2)
 },r1=regexCompAuth,r2=regexNoFirst)
 ```
 
-# 3 tests
+# 3 Relationships between complete author names and author names
+
+``` r
+length(datab$Authors)==length(treatedFullNames)
+```
+
+    ## [1] TRUE
+
+``` r
+sepAuthorSimp <- strsplit(datab$Authors,"; ")
+all(sapply(sepAuthorSimp,length)==sapply(treatedFullNames,nrow))
+```
+
+    ## [1] TRUE
+
+``` r
+tabAuthComp<-Reduce(rbind,treatedFullNames)
+tabAuthComp$nameSimp<-unlist(sepAuthorSimp)
+lastNameInNameSimp<-apply(tabAuthComp,1,function(x)grepl(x[2],x[5],fixed=T))
+```
+
+It appears that the order in both columns is really always the same!
+
+# 4 Clean extraction
+
+Then it should be easy to extract the names in function of the author ID
+
+``` r
+require(sqldf)
+```
+
+    ## Loading required package: sqldf
+
+    ## Loading required package: gsubfn
+
+    ## Loading required package: proto
+
+    ## Loading required package: RSQLite
+
+``` r
+extractMajoNames<-by(tabAuthComp,tabAuthComp$authorId,function(tab)
+  {
+    lnfnOrder<-sqldf("SELECT lastName, firstName, count(*) FROM tab ORDER BY count(*) DESC,LENGTH(firstName) DESC LIMIT 1")
+    nbns<-table(tab$nameSimp)
+    nsMaj<-names(nbns)[which.max(nbns)]
+    data.frame(lastName=lnfnOrder$lastName,firstName=lnfnOrder$firstName,nameSimp=nsMaj)
+    
+  })
+tabNamesFinal<-Reduce(rbind,extractMajoNames)
+rownames(tabNamesFinal)<-names(extractMajoNames)
+authIdsDoc<-sapply(treatedFullNames,function(x)x$authorId)
+authDoc<-data.frame(
+  doc=rep(1:length(authIdsDoc),sapply(authIdsDoc,length)),
+  authId=unlist(authIdsDoc),
+  authOrder=unlist(lapply(authIdsDoc[sapply(authIdsDoc,length)>0],function(x)1:length(x))),
+  authNb=rep(sapply(authIdsDoc,length),sapply(authIdsDoc,length)),
+  authSimp=tabAuthComp$nameSimp
+)
+```
+
+# 5 tests
 
 ``` r
 sepAbbAuthors <- strsplit(datab$Authors,"; ")
+regexAbbAuthors <- "^.+ ((-?[A-Z]?[a-z]?\\.)+)$"
+regexAbbAuthors <- "^.+ ([.[:alpha:]-]+)$"
+
+sepAbbAuthors[sapply(sapply(sapply(sepAbbAuthors,grepl,pattern=regexAbbAuthors,perl=T),`!`),any)]
+```
+
+    ## [[1]]
+    ##  [1] "Fóti S."       "Bartha S."     "Balogh J."     "Pintér K."    
+    ##  [5] "Koncz P."      "Biró M."       "Süle G."       "Petrás D."    
+    ##  [9] "de Luca G."    "Mészáros Á."   "Zimmermann Z." "Szabó G."     
+    ## [13] "Csathó A.I."   "Ladányi M."    "Péli E.R."     "Nagy Z."      
+    ## 
+    ## [[2]]
+    ##  [1] "Midolo G."           "Axmanová I."         "Divíšek J."         
+    ##  [4] "Dřevojan P."         "Lososová Z."         "Večeřa M."          
+    ##  [7] "Karger D.N."         "Thuiller W."         "Bruelheide H."      
+    ## [10] "Aćić S."             "Attorre F."          "Biurrun I."         
+    ## [13] "Boch S."             "Bonari G."           "Čarni A."           
+    ## [16] "Chiarucci A."        "Ćušterevska R."      "Dengler J."         
+    ## [19] "Dziuba T."           "Garbolino E."        "Jandt U."           
+    ## [22] "Lenoir J."           "Marcenò C."          "Rūsiņa S."          
+    ## [25] "Šibík J."            "Škvorc Ž."           "Stančić Z."         
+    ## [28] "Stanišić-Vujačić M." "Svenning J.-C."      "Swacha G."          
+    ## [31] "Vassilev K."         "Chytrý M."          
+    ## 
+    ## [[3]]
+    ## [1] "Erdős L."        "Ho K.V."         "Bede-Fazekas Á." "Kröel-Dulay G." 
+    ## [5] "Tölgyesi C."     "Bátori Z."       "Török P."       
+    ## 
+    ## [[4]]
+    ## [1] "Maturano-Ruiz A." "Ruiz-Yanetti S."  "Manrique-Alba À." "Moutahir H."     
+    ## [5] "Chirino E."       "Vilagrosa A."     "Bellot J.F."     
+    ## 
+    ## [[5]]
+    ## [1] "Pinke G."        "Vér A."          "Réder K."        "Koltai G."      
+    ## [5] "Schlögl G."      "Bede-Fazekas Á." "Czúcz B."        "Botta-Dukát Z." 
+    ## 
+    ## [[6]]
+    ##  [1] "Preislerová Z."        "Marcenò C."            "Loidi J."             
+    ##  [4] "Bonari G."             "Borovyk D."            "Gavilán R.G."         
+    ##  [7] "Golub V."              "Terzi M."              "Theurillat J.-P."     
+    ## [10] "Argagnon O."           "Bioret F."             "Biurrun I."           
+    ## [13] "Campos J.A."           "Capelo J."             "Čarni A."             
+    ## [16] "Çoban S."              "Csiky J."              "Ćuk M."               
+    ## [19] "Ćušterevska R."        "Dengler J."            "Didukh Y."            
+    ## [22] "Dítě D."               "Fanelli G."            "Fernández-González F."
+    ## [25] "Guarino R."            "Hájek O."              "Iakushenko D."        
+    ## [28] "Iemelianova S."        "Jansen F."             "Jašková A."           
+    ## [31] "Jiroušek M."           "Kalníková V."          "Kavgacı A."           
+    ## [34] "Kuzemko A."            "Landucci F."           "Lososová Z."          
+    ## [37] "Milanović Đ."          "Molina J.A."           "Monteiro-Henriques T."
+    ## [40] "Mucina L."             "Novák P."              "Nowak A."             
+    ## [43] "Pätsch R."             "Perrin G."             "Peterka T."           
+    ## [46] "Rašomavičius V."       "Reczyńska K."          "Rūsiņa S."            
+    ## [49] "Mata D.S."             "Guerra A."             "Šibík J."             
+    ## [52] "Škvorc Ž."             "Stešević D."           "Stupar V."            
+    ## [55] "Świerkosz K."          "Tzonev R."             "Vassilev K."          
+    ## [58] "Vynokurov D."          "Willner W."            "Chytrý M."            
+    ## 
+    ## [[7]]
+    ##  [1] "Klinkovská K." "Kučerová A."   "Pustková Š."   "Rohel J."     
+    ##  [5] "Slachová K."   "Sobotka V."    "Szokala D."    "Danihelka J." 
+    ##  [9] "Kočí M."       "Šmerdová E."   "Chytrý M."    
+    ## 
+    ## [[8]]
+    ## [1] "Gómez-García D."       "Aguirre de Juana Á.J." "Jiménez Sánchez R."   
+    ## [4] "Manrique Magallón C." 
+    ## 
+    ## [[9]]
+    ## [1] "Niu K."        "Suonan J."     "Badingqiuying" "Smith A.T."   
+    ## [5] "Lechowicz M." 
+    ## 
+    ## [[10]]
+    ##  [1] "Tichý L."             "Axmanová I."          "Dengler J."          
+    ##  [4] "Guarino R."           "Jansen F."            "Midolo G."           
+    ##  [7] "Nobis M.P."           "Van Meerbeek K."      "Aćić S."             
+    ## [10] "Attorre F."           "Bergmeier E."         "Biurrun I."          
+    ## [13] "Bonari G."            "Bruelheide H."        "Campos J.A."         
+    ## [16] "Čarni A."             "Chiarucci A."         "Ćuk M."              
+    ## [19] "Ćušterevska R."       "Didukh Y."            "Dítě D."             
+    ## [22] "Dítě Z."              "Dziuba T."            "Fanelli G."          
+    ## [25] "Fernández-Pascual E." "Garbolino E."         "Gavilán R.G."        
+    ## [28] "Gégout J.-C."         "Graf U."              "Güler B."            
+    ## [31] "Hájek M."             "Hennekens S.M."       "Jandt U."            
+    ## [34] "Jašková A."           "Jiménez-Alfaro B."    "Julve P."            
+    ## [37] "Kambach S."           "Karger D.N."          "Karrer G."           
+    ## [40] "Kavgacı A."           "Knollová I."          "Kuzemko A."          
+    ## [43] "Küzmič F."            "Landucci F."          "Lengyel A."          
+    ## [46] "Lenoir J."            "Marcenò C."           "Moeslund J.E."       
+    ## [49] "Novák P."             "Pérez-Haase A."       "Peterka T."          
+    ## [52] "Pielech R."           "Pignatti A."          "Rašomavičius V."     
+    ## [55] "Rūsiņa S."            "Saatkamp A."          "Šilc U."             
+    ## [58] "Škvorc Ž."            "Theurillat J.-P."     "Wohlgemuth T."       
+    ## [61] "Chytrý M."           
+    ## 
+    ## [[11]]
+    ## [1] "Loidi J."               "Amigo J."               "Bueno Á."              
+    ## [4] "Herrera M."             "Rodríguez-Guitián M.A."
+    ## 
+    ## [[12]]
+    ##  [1] "Preislerová Z."        "Jiménez-Alfaro B."     "Mucina L."            
+    ##  [4] "Berg C."               "Bonari G."             "Kuzemko A."           
+    ##  [7] "Landucci F."           "Marcenò C."            "Monteiro-Henriques T."
+    ## [10] "Novák P."              "Vynokurov D."          "Bergmeier E."         
+    ## [13] "Dengler J."            "Apostolova I."         "Bioret F."            
+    ## [16] "Biurrun I."            "Campos J.A."           "Capelo J."            
+    ## [19] "Čarni A."              "Çoban S."              "Csiky J."             
+    ## [22] "Ćuk M."                "Ćušterevska R."        "Daniëls F.J.A."       
+    ## [25] "De Sanctis M."         "Didukh Y."             "Dítě D."              
+    ## [28] "Fanelli G."            "Golovanov Y."          "Golub V."             
+    ## [31] "Guarino R."            "Hájek M."              "Iakushenko D."        
+    ## [34] "Indreica A."           "Jansen F."             "Jašková A."           
+    ## [37] "Jiroušek M."           "Kalníková V."          "Kavgacı A."           
+    ## [40] "Kucherov I."           "Küzmič F."             "Lebedeva M."          
+    ## [43] "Loidi J."              "Lososová Z."           "Lysenko T."           
+    ## [46] "Milanović Đ."          "Onyshchenko V."        "Perrin G."            
+    ## [49] "Peterka T."            "Rašomavičius V."       "Rodríguez-Rojo M.P."  
+    ## [52] "Rodwell J.S."          "Rūsiņa S."             "Sánchez-Mata D."      
+    ## [55] "Schaminée J.H.J."      "Semenishchenkov Y."    "Shevchenko N."        
+    ## [58] "Šibík J."              "Škvorc Ž."             "Smagin V."            
+    ## [61] "Stešević D."           "Stupar V."             "Šumberová K."         
+    ## [64] "Theurillat J.-P."      "Tikhonova E."          "Tzonev R."            
+    ## [67] "Valachovič M."         "Vassilev K."           "Willner W."           
+    ## [70] "Yamalov S."            "Večeřa M."             "Chytrý M."            
+    ## 
+    ## [[13]]
+    ## [1] "Egea Á.V."     "Campagna M.S." "Cona M.I."     "Sartor C."    
+    ## [5] "Campos C.M."  
+    ## 
+    ## [[14]]
+    ## [1] "Janišová M."  "Širka P."     "Palpurina S." "Magnes M."    "Kuzemko A."  
+    ## [6] "Dembicz I."   "Kozub Ł."    
+    ## 
+    ## [[15]]
+    ## [1] "Idárraga-Piedrahíta Á." "González-Caro S."       "Duque Á.J."            
+    ## [4] "Jiménez-Montoya J."     "González-M. R."         "Parra J.L."            
+    ## [7] "Rivera-Gutiérrez H.F." 
+    ## 
+    ## [[16]]
+    ## [1] "Roy M.-È."       "Surget-Groba Y." "Rivest D."      
+    ## 
+    ## [[17]]
+    ## [1] "Albert Á.-J."        "Götzenberger L."     "Jongepierová I."    
+    ## [4] "Konečná M."          "Lőkkösné-Kelbert B." "Májeková M."        
+    ## [7] "Mudrák O."           "Klimešová J."       
+    ## 
+    ## [[18]]
+    ##  [1] "Dembicz I."            "Dengler J."            "Steinbauer M.J."      
+    ##  [4] "Matthews T.J."         "Bartha S."             "Burrascano S."        
+    ##  [7] "Chiarucci A."          "Filibeck G."           "Gillet F."            
+    ## [10] "Janišová M."           "Palpurina S."          "Storch D."            
+    ## [13] "Ulrich W."             "Aćić S."               "Boch S."              
+    ## [16] "Campos J.A."           "Cancellieri L."        "Carboni M."           
+    ## [19] "Ciaschetti G."         "Conradi T."            "De Frenne P."         
+    ## [22] "Dolezal J."            "Dolnik C."             "Essl F."              
+    ## [25] "Fantinato E."          "García-Mijangos I."    "Giusso del Galdo G.P."
+    ## [28] "Grytnes J.-A."         "Guarino R."            "Güler B."             
+    ## [31] "Kapfer J."             "Klichowska E."         "Kozub Ł."             
+    ## [34] "Kuzemko A."            "Löbel S."              "Manthey M."           
+    ## [37] "Marcenò C."            "Mimet A."              "Naqinezhad A."        
+    ## [40] "Noroozi J."            "Nowak A."              "Pauli H."             
+    ## [43] "Peet R.K."             "Pellissier V."         "Pielech R."           
+    ## [46] "Terzi M."              "Uğurlu E."             "Valkó O."             
+    ## [49] "Vasheniak I."          "Vassilev K."           "Vynokurov D."         
+    ## [52] "White H.J."            "Willner W."            "Winkler M."           
+    ## [55] "Wolfrum S."            "Zhang J."              "Biurrun I."           
+    ## 
+    ## [[19]]
+    ##   [1] "Biurrun I."             "Pielech R."             "Dembicz I."            
+    ##   [4] "Gillet F."              "Kozub Ł."               "Marcenò C."            
+    ##   [7] "Reitalu T."             "Van Meerbeek K."        "Guarino R."            
+    ##  [10] "Chytrý M."              "Pakeman R.J."           "Preislerová Z."        
+    ##  [13] "Axmanová I."            "Burrascano S."          "Bartha S."             
+    ##  [16] "Boch S."                "Bruun H.H."             "Conradi T."            
+    ##  [19] "De Frenne P."           "Essl F."                "Filibeck G."           
+    ##  [22] "Hájek M."               "Jiménez-Alfaro B."      "Kuzemko A."            
+    ##  [25] "Molnár Z."              "Pärtel M."              "Pätsch R."             
+    ##  [28] "Prentice H.C."          "Roleček J."             "Sutcliffe L.M.E."      
+    ##  [31] "Terzi M."               "Winkler M."             "Wu J."                 
+    ##  [34] "Aćić S."                "Acosta A.T.R."          "Afif E."               
+    ##  [37] "Akasaka M."             "Alatalo J.M."           "Aleffi M."             
+    ##  [40] "Aleksanyan A."          "Ali A."                 "Apostolova I."         
+    ##  [43] "Ashouri P."             "Bátori Z."              "Baumann E."            
+    ##  [46] "Becker T."              "Belonovskaya E."        "Benito Alonso J.L."    
+    ##  [49] "Berastegi A."           "Bergamini A."           "Bhatta K.P."           
+    ##  [52] "Bonini I."              "Büchler M.-O."          "Budzhak V."            
+    ##  [55] "Bueno Á."               "Buldrini F."            "Campos J.A."           
+    ##  [58] "Cancellieri L."         "Carboni M."             "Ceulemans T."          
+    ##  [61] "Chiarucci A."           "Chocarro C."            "Conti L."              
+    ##  [64] "Csergő A.M."            "Cykowska-Marzencka B."  "Czarniecka-Wiera M."   
+    ##  [67] "Czarnocka-Cieciura M."  "Czortek P."             "Danihelka J."          
+    ##  [70] "de Bello F."            "Deák B."                "Demeter L."            
+    ##  [73] "Deng L."                "Diekmann M."            "Dolezal J."            
+    ##  [76] "Dolnik C."              "Dřevojan P."            "Dupré C."              
+    ##  [79] "Ecker K."               "Ejtehadi H."            "Erschbamer B."         
+    ##  [82] "Etayo J."               "Etzold J."              "Farkas T."             
+    ##  [85] "Farzam M."              "Fayvush G."             "Fernández Calzado M.R."
+    ##  [88] "Finckh M."              "Fjellstad W."           "Fotiadis G."           
+    ##  [91] "García-Magro D."        "García-Mijangos I."     "Gavilán R.G."          
+    ##  [94] "Germany M."             "Ghafari S."             "Giusso del Galdo G.P." 
+    ##  [97] "Grytnes J.-A."          "Güler B."               "Gutiérrez-Girón A."    
+    ## [100] "Helm A."                "Herrera M."             "Hüllbusch E.M."        
+    ## [103] "Ingerpuu N."            "Jägerbrand A.K."        "Jandt U."              
+    ## [106] "Janišová M."            "Jeanneret P."           "Jeltsch F."            
+    ## [109] "Jensen K."              "Jentsch A."             "Kącki Z."              
+    ## [112] "Kakinuma K."            "Kapfer J."              "Kargar M."             
+    ## [115] "Kelemen A."             "Kiehl K."               "Kirschner P."          
+    ## [118] "Koyama A."              "Langer N."              "Lazzaro L."            
+    ## [121] "Lepš J."                "Li C.-F."               "Li F.Y."               
+    ## [124] "Liendo D."              "Lindborg R."            "Löbel S."              
+    ## [127] "Lomba A."               "Lososová Z."            "Lustyk P."             
+    ## [130] "Luzuriaga A.L."         "Ma W."                  "Maccherini S."         
+    ## [133] "Magnes M."              "Malicki M."             "Manthey M."            
+    ## [136] "Mardari C."             "May F."                 "Mayrhofer H."          
+    ## [139] "Meier E.S."             "Memariani F."           "Merunková K."          
+    ## [142] "Michelsen O."           "Molero Mesa J."         "Moradi H."             
+    ## [145] "Moysiyenko I."          "Mugnai M."              "Naqinezhad A."         
+    ## [148] "Natcheva R."            "Ninot J.M."             "Nobis M."              
+    ## [151] "Noroozi J."             "Nowak A."               "Onipchenko V."         
+    ## [154] "Palpurina S."           "Pauli H."               "Pedashenko H."         
+    ## [157] "Pedersen C."            "Peet R.K."              "Pérez-Haase A."        
+    ## [160] "Peters J."              "Pipenbaher N."          "Pirini C."             
+    ## [163] "Pladevall-Izard E."     "Plesková Z."            "Potenza G."            
+    ## [166] "Rahmanian S."           "Rodríguez-Rojo M.P."    "Ronkin V."             
+    ## [169] "Rosati L."              "Ruprecht E."            "Rusina S."             
+    ## [172] "Sabovljević M."         "Sanaei A."              "Sánchez A.M."          
+    ## [175] "Santi F."               "Savchenko G."           "Sebastià M.T."         
+    ## [178] "Shyriaieva D."          "Silva V."               "Škornik S."            
+    ## [181] "Šmerdová E."            "Sonkoly J."             "Sperandii M.G."        
+    ## [184] "Staniaszek-Kik M."      "Stevens C."             "Stifter S."            
+    ## [187] "Suchrow S."             "Swacha G."              "Świerszcz S."          
+    ## [190] "Talebi A."              "Teleki B."              "Tichý L."              
+    ## [193] "Tölgyesi C."            "Torca M."               "Török P."              
+    ## [196] "Tsarevskaya N."         "Tsiripidis I."          "Turisová I."           
+    ## [199] "Ushimaru A."            "Valkó O."               "Van Mechelen C."       
+    ## [202] "Vanneste T."            "Vasheniak I."           "Vassilev K."           
+    ## [205] "Viciani D."             "Villar L."              "Virtanen R."           
+    ## [208] "Vitasović-Kosić I."     "Vojtkó A."              "Vynokurov D."          
+    ## [211] "Waldén E."              "Wang Y."                "Weiser F."             
+    ## [214] "Wen L."                 "Wesche K."              "White H."              
+    ## [217] "Widmer S."              "Wolfrum S."             "Wróbel A."             
+    ## [220] "Yuan Z."                "Zelený D."              "Zhao L."               
+    ## [223] "Dengler J."            
+    ## 
+    ## [[20]]
+    ##  [1] "Wagner V."             "Večeřa M."             "Jiménez-Alfaro B."    
+    ##  [4] "Pergl J."              "Lenoir J."             "Svenning J.-C."       
+    ##  [7] "Pyšek P."              "Agrillo E."            "Biurrun I."           
+    ## [10] "Campos J.A."           "Ewald J."              "Fernández-González F."
+    ## [13] "Jandt U."              "Rašomavičius V."       "Šilc U."              
+    ## [16] "Škvorc Ž."             "Vassilev K."           "Wohlgemuth T."        
+    ## [19] "Chytrý M."            
+    ## 
+    ## [[21]]
+    ##  [1] "Sporbert M."       "Welk E."           "Seidler G."       
+    ##  [4] "Jandt U."          "Aćić S."           "Biurrun I."       
+    ##  [7] "Campos J.A."       "Čarni A."          "Cerabolini B.E.L."
+    ## [10] "Chytrý M."         "Ćušterevska R."    "Dengler J."       
+    ## [13] "De Sanctis M."     "Dziuba T."         "Fagúndez J."      
+    ## [16] "Field R."          "Golub V."          "He T."            
+    ## [19] "Jansen F."         "Lenoir J."         "Marcenò C."       
+    ## [22] "Martín-Forés I."   "Moeslund J.E."     "Moretti M."       
+    ## [25] "Niinemets Ü."      "Penuelas J."       "Pérez-Haase A."   
+    ## [28] "Vandvik V."        "Vassilev K."       "Vynokurov D."     
+    ## [31] "Bruelheide H."    
+    ## 
+    ## [[22]]
+    ##  [1] "Večeřa M."             "Axmanová I."           "Padullés Cubino J."   
+    ##  [4] "Lososová Z."           "Divíšek J."            "Knollová I."          
+    ##  [7] "Aćić S."               "Biurrun I."            "Boch S."              
+    ## [10] "Bonari G."             "Campos J.A."           "Čarni A."             
+    ## [13] "Carranza M.L."         "Casella L."            "Chiarucci A."         
+    ## [16] "Ćušterevska R."        "Delbosc P."            "Dengler J."           
+    ## [19] "Fernández-González F." "Gégout J.-C."          "Jandt U."             
+    ## [22] "Jansen F."             "Jašková A."            "Jiménez-Alfaro B."    
+    ## [25] "Kuzemko A."            "Lebedeva M."           "Lenoir J."            
+    ## [28] "Lysenko T."            "Moeslund J.E."         "Pielech R."           
+    ## [31] "Ruprecht E."           "Šibík J."              "Šilc U."              
+    ## [34] "Škvorc Ž."             "Swacha G."             "Tatarenko I."         
+    ## [37] "Vassilev K."           "Wohlgemuth T."         "Yamalov S."           
+    ## [40] "Chytrý M."            
+    ## 
+    ## [[23]]
+    ## [1] "Martín-Vélez V." "Lovas-Kiss Á."   "Sánchez M.I."    "Green A.J."     
+    ## 
+    ## [[24]]
+    ## [1] "Dembicz I."            "Moysiyenko I.I."       "Kozub Ł."             
+    ## [4] "Dengler J."            "Zakharova M."          "Sudnik-Wójcikowska B."
+    ## 
+    ## [[25]]
+    ##  [1] "Padullés Cubino J." "Jiménez-Alfaro B."  "Sabatini F.M."     
+    ##  [4] "Willner W."         "Lososová Z."        "Biurrun I."        
+    ##  [7] "Brunet J."          "Campos J.A."        "Indreica A."       
+    ## [10] "Jansen F."          "Lenoir J."          "Škvorc Ž."         
+    ## [13] "Vassilev K."        "Chytrý M."         
+    ## 
+    ## [[26]]
+    ##  [1] "Kalníková V."    "Chytrý K."       "Biţa-Nicolae C." "Bracco F."      
+    ##  [5] "Font X."         "Iakushenko D."   "Kącki Z."        "Kudrnovsky H."  
+    ##  [9] "Landucci F."     "Lustyk P."       "Milanović Đ."    "Šibík J."       
+    ## [13] "Šilc U."         "Uziębło A.K."    "Villani M."      "Chytrý M."      
+    ## 
+    ## [[27]]
+    ## [1] "Marsman F."    "Nystuen K.O."  "Opedal Ø.H."   "Foest J.J."   
+    ## [5] "Sørensen M.V." "De Frenne P."  "Graae B.J."    "Limpens J."   
+    ## 
+    ## [[28]]
+    ## [1] "Gustafsson L."   "Granath G."      "Nohrstedt H.-Ö." "Leverkus A.B."  
+    ## [5] "Johansson V."   
+    ## 
+    ## [[29]]
+    ##  [1] "Bonari G."             "Fernández-González F." "Çoban S."             
+    ##  [4] "Monteiro-Henriques T." "Bergmeier E."          "Didukh Y.P."          
+    ##  [7] "Xystrakis F."          "Angiolini C."          "Chytrý K."            
+    ## [10] "Acosta A.T.R."         "Agrillo E."            "Costa J.C."           
+    ## [13] "Danihelka J."          "Hennekens S.M."        "Kavgacı A."           
+    ## [16] "Knollová I."           "Neto C.S."             "Sağlam C."            
+    ## [19] "Škvorc Ž."             "Tichý L."              "Chytrý M."            
+    ## 
+    ## [[30]]
+    ##  [1] "Chytrý M."             "Tichý L."              "Hennekens S.M."       
+    ##  [4] "Knollová I."           "Janssen J.A.M."        "Rodwell J.S."         
+    ##  [7] "Peterka T."            "Marcenò C."            "Landucci F."          
+    ## [10] "Danihelka J."          "Hájek M."              "Dengler J."           
+    ## [13] "Novák P."              "Zukal D."              "Jiménez-Alfaro B."    
+    ## [16] "Mucina L."             "Abdulhak S."           "Aćić S."              
+    ## [19] "Agrillo E."            "Attorre F."            "Bergmeier E."         
+    ## [22] "Biurrun I."            "Boch S."               "Bölöni J."            
+    ## [25] "Bonari G."             "Braslavskaya T."       "Bruelheide H."        
+    ## [28] "Campos J.A."           "Čarni A."              "Casella L."           
+    ## [31] "Ćuk M."                "Ćušterevska R."        "De Bie E."            
+    ## [34] "Delbosc P."            "Demina O."             "Didukh Y."            
+    ## [37] "Dítě D."               "Dziuba T."             "Ewald J."             
+    ## [40] "Gavilán R.G."          "Gégout J.-C."          "Giusso del Galdo G.P."
+    ## [43] "Golub V."              "Goncharova N."         "Goral F."             
+    ## [46] "Graf U."               "Indreica A."           "Isermann M."          
+    ## [49] "Jandt U."              "Jansen F."             "Jansen J."            
+    ## [52] "Jašková A."            "Jiroušek M."           "Kącki Z."             
+    ## [55] "Kalníková V."          "Kavgacı A."            "Khanina L."           
+    ## [58] "Yu. Korolyuk A."       "Kozhevnikova M."       "Kuzemko A."           
+    ## [61] "Küzmič F."             "Kuznetsov O.L."        "Laiviņš M."           
+    ## [64] "Lavrinenko I."         "Lavrinenko O."         "Lebedeva M."          
+    ## [67] "Lososová Z."           "Lysenko T."            "Maciejewski L."       
+    ## [70] "Mardari C."            "Marinšek A."           "Napreenko M.G."       
+    ## [73] "Onyshchenko V."        "Pérez-Haase A."        "Pielech R."           
+    ## [76] "Prokhorov V."          "Rašomavičius V."       "Rodríguez Rojo M.P."  
+    ## [79] "Rūsiņa S."             "Schrautzer J."         "Šibík J."             
+    ## [82] "Šilc U."               "Škvorc Ž."             "Smagin V.A."          
+    ## [85] "Stančić Z."            "Stanisci A."           "Tikhonova E."         
+    ## [88] "Tonteri T."            "Uogintas D."           "Valachovič M."        
+    ## [91] "Vassilev K."           "Vynokurov D."          "Willner W."           
+    ## [94] "Yamalov S."            "Evans D."              "Palitzsch Lund M."    
+    ## [97] "Spyropoulou R."        "Tryfon E."             "Schaminée J.H.J."     
+    ## 
+    ## [[31]]
+    ## [1] "Škvorc Ž."     "Ćuk M."        "Zelnik I."     "Franjić J."   
+    ## [5] "Igić R."       "Ilić M."       "Krstonošić D." "Vukov D."     
+    ## [9] "Čarni A."     
+    ## 
+    ## [[32]]
+    ## [1] "Meira-Neto J.A.A."  "Nunes Cândido H.M." "Miazaki Â."        
+    ## [4] "Pontara V."         "Bueno M.L."         "Solar R."          
+    ## [7] "Gastauer M."       
+    ## 
+    ## [[33]]
+    ## [1] "Trujillo L.N."          "Granzow-de la Cerda Í." "Pardo I."              
+    ## [4] "Macía M.J."             "Cala V."                "Arellano G."           
+    ## 
+    ## [[34]]
+    ## [1] "Bitomský M." "Mládková P." "Cimalová Š." "Mládek J."  
+    ## 
+    ## [[35]]
+    ##   [1] "Bruelheide H."         "Dengler J."            "Jiménez-Alfaro B."    
+    ##   [4] "Purschke O."           "Hennekens S.M."        "Chytrý M."            
+    ##   [7] "Pillar V.D."           "Jansen F."             "Kattge J."            
+    ##  [10] "Sandel B."             "Aubin I."              "Biurrun I."           
+    ##  [13] "Field R."              "Haider S."             "Jandt U."             
+    ##  [16] "Lenoir J."             "Peet R.K."             "Peyre G."             
+    ##  [19] "Sabatini F.M."         "Schmidt M."            "Schrodt F."           
+    ##  [22] "Winter M."             "Aćić S."               "Agrillo E."           
+    ##  [25] "Alvarez M."            "Ambarlı D."            "Angelini P."          
+    ##  [28] "Apostolova I."         "Arfin Khan M.A.S."     "Arnst E."             
+    ##  [31] "Attorre F."            "Baraloto C."           "Beckmann M."          
+    ##  [34] "Berg C."               "Bergeron Y."           "Bergmeier E."         
+    ##  [37] "Bjorkman A.D."         "Bondareva V."          "Borchardt P."         
+    ##  [40] "Botta-Dukát Z."        "Boyle B."              "Breen A."             
+    ##  [43] "Brisse H."             "Byun C."               "Cabido M.R."          
+    ##  [46] "Casella L."            "Cayuela L."            "Černý T."             
+    ##  [49] "Chepinoga V."          "Csiky J."              "Curran M."            
+    ##  [52] "Ćušterevska R."        "Dajić Stevanović Z."   "De Bie E."            
+    ##  [55] "de Ruffray P."         "De Sanctis M."         "Dimopoulos P."        
+    ##  [58] "Dressler S."           "Ejrnæs R."             "El-Sheikh M.A.E.-R.M."
+    ##  [61] "Enquist B."            "Ewald J."              "Fagúndez J."          
+    ##  [64] "Finckh M."             "Font X."               "Forey E."             
+    ##  [67] "Fotiadis G."           "García-Mijangos I."    "de Gasper A.L."       
+    ##  [70] "Golub V."              "Gutierrez A.G."        "Hatim M.Z."           
+    ##  [73] "He T."                 "Higuchi P."            "Holubová D."          
+    ##  [76] "Hölzel N."             "Homeier J."            "Indreica A."          
+    ##  [79] "Işık Gürsoy D."        "Jansen S."             "Janssen J."           
+    ##  [82] "Jedrzejek B."          "Jiroušek M."           "Jürgens N."           
+    ##  [85] "Kącki Z."              "Kavgacı A."            "Kearsley E."          
+    ##  [88] "Kessler M."            "Knollová I."           "Kolomiychuk V."       
+    ##  [91] "Korolyuk A."           "Kozhevnikova M."       "Kozub Ł."             
+    ##  [94] "Krstonošić D."         "Kühl H."               "Kühn I."              
+    ##  [97] "Kuzemko A."            "Küzmič F."             "Landucci F."          
+    ## [100] "Lee M.T."              "Levesley A."           "Li C.-F."             
+    ## [103] "Liu H."                "Lopez-Gonzalez G."     "Lysenko T."           
+    ## [106] "Macanović A."          "Mahdavi P."            "Manning P."           
+    ## [109] "Marcenò C."            "Martynenko V."         "Mencuccini M."        
+    ## [112] "Minden V."             "Moeslund J.E."         "Moretti M."           
+    ## [115] "Müller J.V."           "Munzinger J."          "Niinemets Ü."         
+    ## [118] "Nobis M."              "Noroozi J."            "Nowak A."             
+    ## [121] "Onyshchenko V."        "Overbeck G.E."         "Ozinga W.A."          
+    ## [124] "Pauchard A."           "Pedashenko H."         "Peñuelas J."          
+    ## [127] "Pérez-Haase A."        "Peterka T."            "Petřík P."            
+    ## [130] "Phillips O.L."         "Prokhorov V."          "Rašomavičius V."      
+    ## [133] "Revermann R."          "Rodwell J."            "Ruprecht E."          
+    ## [136] "Rūsiņa S."             "Samimi C."             "Schaminée J.H.J."     
+    ## [139] "Schmiedel U."          "Šibík J."              "Šilc U."              
+    ## [142] "Škvorc Ž."             "Smyth A."              "Sop T."               
+    ## [145] "Sopotlieva D."         "Sparrow B."            "Stančić Z."           
+    ## [148] "Svenning J.-C."        "Swacha G."             "Tang Z."              
+    ## [151] "Tsiripidis I."         "Turtureanu P.D."       "Uğurlu E."            
+    ## [154] "Uogintas D."           "Valachovič M."         "Vanselow K.A."        
+    ## [157] "Vashenyak Y."          "Vassilev K."           "Vélez-Martin E."      
+    ## [160] "Venanzoni R."          "Vibrans A.C."          "Violle C."            
+    ## [163] "Virtanen R."           "von Wehrden H."        "Wagner V."            
+    ## [166] "Walker D.A."           "Wana D."               "Weiher E."            
+    ## [169] "Wesche K."             "Whitfeld T."           "Willner W."           
+    ## [172] "Wiser S."              "Wohlgemuth T."         "Yamalov S."           
+    ## [175] "Zizka G."              "Zverev A."            
+    ## 
+    ## [[36]]
+    ## [1] "Nystuen K.O."   "Sundsdal K."    "Opedal Ø.H."    "Holien H."     
+    ## [5] "Strimbeck G.R." "Graae B.J."    
+    ## 
+    ## [[37]]
+    ## [1] "Kozub Ł."       "Goldstein K."   "Dembicz I."     "Wilk M."       
+    ## [5] "Wyszomirski T." "Kotowski W."   
+    ## 
+    ## [[38]]
+    ##  [1] "Verheyen K."        "Bažány M."          "Chećko E."         
+    ##  [4] "Chudomelová M."     "Closset-Kopp D."    "Czortek P."        
+    ##  [7] "Decocq G."          "De Frenne P."       "De Keersmaeker L." 
+    ## [10] "Enríquez García C." "Fabšičová M."       "Grytnes J.-A."     
+    ## [13] "Hederová L."        "Hédl R."            "Heinken T."        
+    ## [16] "Schei F.H."         "Horváth S."         "Jaroszewicz B."    
+    ## [19] "Jermakowicz E."     "Klinerová T."       "Kolk J."           
+    ## [22] "Kopecký M."         "Kuras I."           "Lenoir J."         
+    ## [25] "Macek M."           "Máliš F."           "Martinessen T.C."  
+    ## [28] "Naaf T."            "Papp L."            "Papp-Szakály Á."   
+    ## [31] "Pech P."            "Petřík P."          "Prach J."          
+    ## [34] "Reczyńska K."       "Sætersdal M."       "Spicher F."        
+    ## [37] "Standovár T."       "Świerkosz K."       "Szczęśniak E."     
+    ## [40] "Tóth Z."            "Ujházy K."          "Ujházyová M."      
+    ## [43] "Vangansbeke P."     "Vild O."            "Wołkowycki D."     
+    ## [46] "Wulf M."            "Baeten L."         
+    ## 
+    ## [[39]]
+    ## [1] "Øien D.-I."   "Pedersen B."  "Kozub Ł."     "Goldstein K." "Wilk M."     
+    ## 
+    ## [[40]]
+    ##  [1] "Andrade B.O."       "Bonilha C.L."       "Overbeck G.E."     
+    ##  [4] "Vélez-Martin E."    "Rolim R.G."         "Bordignon S.A.L."  
+    ##  [7] "Schneider A.A."     "Vogel Ely C."       "Lucas D.B."        
+    ## [10] "Garcia É.N."        "dos Santos E.D."    "Torchelsen F.P."   
+    ## [13] "Vieira M.S."        "Silva Filho P.J.S." "Ferreira P.M.A."   
+    ## [16] "Trevisan R."        "Hollas R."          "Campestrini S."    
+    ## [19] "Pillar V.D."        "Boldrini I.I."     
+    ## 
+    ## [[41]]
+    ##  [1] "Takkis K."   "Kull T."     "Hallikma T." "Jaksi P."    "Kaljund K." 
+    ##  [6] "Kauer K."    "Kull T."     "Kurina O."   "Külvik M."   "Lanno K."   
+    ## [11] "Leht M."     "Liira J."    "Melts I."    "Pehlak H."   "Raet J."    
+    ## [16] "Sammet K."   "Sepp K."     "Väli Ü."     "Laanisto L."
+    ## 
+    ## [[42]]
+    ## [1] "Weekes L."      "Kącki Z."       "FitzPatrick Ú." "Kelly F."      
+    ## [5] "Matson R."      "Kelly-Quinn M."
+    ## 
+    ## [[43]]
+    ##  [1] "Marcenò C."          "Guarino R."          "Loidi J."           
+    ##  [4] "Herrera M."          "Isermann M."         "Knollová I."        
+    ##  [7] "Tichý L."            "Tzonev R.T."         "Acosta A.T.R."      
+    ## [10] "FitzPatrick Ú."      "Iakushenko D."       "Janssen J.A.M."     
+    ## [13] "Jiménez-Alfaro B."   "Kącki Z."            "Keizer-Sedláková I."
+    ## [16] "Kolomiychuk V."      "Rodwell J.S."        "Schaminée J.H.J."   
+    ## [19] "Šilc U."             "Chytrý M."          
+    ## 
+    ## [[44]]
+    ## [1] "Ranlund Å."    "Hylander K."   "Johansson V."  "Jonsson F."   
+    ## [5] "Nordin U."     "Gustafsson L."
+    ## 
+    ## [[45]]
+    ## [1] "Ullerud H.A." "Bryn A."      "Halvorsen R." "Hemsing L.Ø."
+    ## 
+    ## [[46]]
+    ##  [1] "Willner W."        "Jiménez-Alfaro B." "Agrillo E."       
+    ##  [4] "Biurrun I."        "Campos J.A."       "Čarni A."         
+    ##  [7] "Casella L."        "Csiky J."          "Ćušterevska R."   
+    ## [10] "Didukh Y.P."       "Ewald J."          "Jandt U."         
+    ## [13] "Jansen F."         "Kącki Z."          "Kavgacı A."       
+    ## [16] "Lenoir J."         "Marinšek A."       "Onyshchenko V."   
+    ## [19] "Rodwell J.S."      "Schaminée J.H.J."  "Šibík J."         
+    ## [22] "Škvorc Ž."         "Svenning J.-C."    "Tsiripidis I."    
+    ## [25] "Turtureanu P.D."   "Tzonev R."         "Vassilev K."      
+    ## [28] "Venanzoni R."      "Wohlgemuth T."     "Chytrý M."        
+    ## 
+    ## [[47]]
+    ## [1] "Somodi I."       "Molnár Z."       "Czúcz B."        "Bede-Fazekas Á."
+    ## [5] "Bölöni J."       "Pásztor L."      "Laborczi A."     "Zimmermann N.E."
+    ## 
+    ## [[48]]
+    ##  [1] "Peterka T."          "Hájek M."            "Jiroušek M."        
+    ##  [4] "Jiménez-Alfaro B."   "Aunina L."           "Bergamini A."       
+    ##  [7] "Dítě D."             "Felbaba-Klushyna L." "Graf U."            
+    ## [10] "Hájková P."          "Hettenbergerová E."  "Ivchenko T.G."      
+    ## [13] "Jansen F."           "Koroleva N.E."       "Lapshina E.D."      
+    ## [16] "Lazarević P.M."      "Moen A."             "Napreenko M.G."     
+    ## [19] "Pawlikowski P."      "Plesková Z."         "Sekulová L."        
+    ## [22] "Smagin V.A."         "Tahvanainen T."      "Thiele A."          
+    ## [25] "Biţǎ-Nicolae C."     "Biurrun I."          "Brisse H."          
+    ## [28] "Ćušterevska R."      "De Bie E."           "Ewald J."           
+    ## [31] "FitzPatrick Ú."      "Font X."             "Jandt U."           
+    ## [34] "Kącki Z."            "Kuzemko A."          "Landucci F."        
+    ## [37] "Moeslund J.E."       "Pérez-Haase A."      "Rašomavičius V."    
+    ## [40] "Rodwell J.S."        "Schaminée J.H.J."    "Šilc U."            
+    ## [43] "Stančić Z."          "Chytrý M."          
+    ## 
+    ## [[49]]
+    ##  [1] "Moles A.T."          "Perkins S.E."        "Laffan S.W."        
+    ##  [4] "Flores-Moreno H."    "Awasthy M."          "Tindall M.L."       
+    ##  [7] "Sack L."             "Pitman A."           "Kattge J."          
+    ## [10] "Aarssen L.W."        "Anand M."            "Bahn M."            
+    ## [13] "Blonder B."          "Cavender-Bares J."   "Cornelissen J.H.C." 
+    ## [16] "Cornwell W.K."       "Díaz S."             "Dickie J.B."        
+    ## [19] "Freschet G.T."       "Griffiths J.G."      "Gutierrez A.G."     
+    ## [22] "Hemmings F.A."       "Hickler T."          "Hitchcock T.D."     
+    ## [25] "Keighery M."         "Kleyer M."           "Kurokawa H."        
+    ## [28] "Leishman M.R."       "Liu K."              "Niinemets"          
+    ## [31] "Onipchenko V."       "Onoda Y."            "Penuelas J."        
+    ## [34] "Pillar V.D."         "Reich P.B."          "Shiodera S."        
+    ## [37] "Siefert A."          "Sosinski E.E., Jr."  "Soudzilovskaia N.A."
+    ## [40] "Swaine E.K."         "Swenson N.G."        "van Bodegom P.M."   
+    ## [43] "Warman L."           "Weiher E."           "Wright I.J."        
+    ## [46] "Zhang H."            "Zobel M."            "Bonser S.P."        
+    ## 
+    ## [[50]]
+    ## [1] "Hájková P."     "Hájek M."       "Rybníček K."    "Jiroušek M."   
+    ## [5] "Tichý L."       "Králová Š."     "Mikulášková E."
+    ## 
+    ## [[51]]
+    ## [1] "Gallegos Torell Å." "Glimskär A."       
+    ## 
+    ## [[52]]
+    ## [1] "Aavik T." "Jõgar Ü." "Liira J." "Tulva I." "Zobel M."
+    ## 
+    ## [[53]]
+    ## [1] "Fritz Ö."     "Niklasson M." "Churski M."  
+    ## 
+    ## [[54]]
+    ## [1] "Toledo-Aceves" "Swaine M.D."  
+    ## 
+    ## [[55]]
+    ## [1] "Gunnarsson U." "Flodin L.-Å." 
+    ## 
+    ## [[56]]
+    ## [1] "Lososová Z." "Chytrý M."   "Cimalová Š." "Kropáč Z."   "Otýpková Z."
+    ## [6] "Pyšek P."    "Tichý L."   
+    ## 
+    ## [[57]]
+    ## [1] "Dag-Inge Ø." "Asbjørn M." 
+    ## 
+    ## [[58]]
+    ##  [1] "Jarvis P.G."    "Dolman A.J."    "Schulze E.-D."  "Matteucci G."  
+    ##  [5] "Kowalski A.S."  "Ceulemans R."   "Rebmann C."     "Moors E.J."    
+    ##  [9] "Granier A."     "Gross P."       "Jensen N.O."    "Pilegaard K."  
+    ## [13] "Lindroth A."    "Grelle A."      "Bernhofer C."   "Grünwald T."   
+    ## [17] "Aubinet M."     "Vesala T."      "Rannik Ü."      "Berbigier P."  
+    ## [21] "Loustau D."     "Guômundsson J." "Ibrom A."       "Morgenstern K."
+    ## [25] "Clement R."     "Moncrieff J."   "Montagnani L."  "Minerbi S."    
+    ## [29] "Valentini R."  
+    ## 
+    ## [[59]]
+    ## [1] "Eriksson Å." "Eriksson O."
+    ## 
+    ## [[60]]
+    ## [1] "Brunet J."            "Falkengren-Grerup U." "Rühling Å."          
+    ## [4] "Tyler G."            
+    ## 
+    ## [[61]]
+    ## [1] "Antonić O."  "Lovrić A.Ž."
+    ## 
+    ## [[62]]
+    ## [1] "Yamamoto S.‐I." "Nishimura N."   "Matsui K."     
+    ## 
+    ## [[63]]
+    ## [1] "Okitsu S." "Ito K."    "Li C.‐h." 
+    ## 
+    ## [[64]]
+    ## [1] "Maubon M."   "Ponge J.‐F." "André J."   
+    ## 
+    ## [[65]]
+    ## [1] "Cao K.‐f."      "Peters R."      "Oldeman R.A.A."
+    ## 
+    ## [[66]]
+    ## [1] "Trémolières M." "Carbiener R."   "Ortscheit A."   "Klein J.‐P."   
+    ## 
+    ## [[67]]
+    ## [1] "Mordelet P."  "Menaut J.‐C."
+    ## 
+    ## [[68]]
+    ## [1] "Camenisch M." "Géhu J.‐M."  
+    ## 
+    ## [[69]]
+    ## [1] "Bergeron Y."     "Dansereau P.‐R."
+    ## 
+    ## [[70]]
+    ## [1] "Mäkirinta A.‐M."
+    ## 
+    ## [[71]]
+    ## [1] "Tapper P.‐G."
+    ## 
+    ## [[72]]
+    ## [1] "Borgegård S.‐O."
+
+``` r
 all(sapply(sepAbbAuthors,length) == sapply(sepAuthors,length))
 ```
 

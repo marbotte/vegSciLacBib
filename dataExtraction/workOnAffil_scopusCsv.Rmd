@@ -26,12 +26,91 @@ sepAffil <- lapply(strsplit(datab$Authors.with.affiliations,"; "),strsplit,", ")
 ```
 
 
+```{r}
+head(datab$Authors)
+sepAuthorSimp<-strsplit(datab$Authors,"; ")
+#mapply(function(x,y)x==sapply(y,function(z)z[[1]]),sepAuthorSimp,sepAffil)
+```
+# Going further
+
+Some authors are not present in the affiliations?
+
+```{r}
+A<-which(!sapply(mapply(function(x,y)x%in%unlist(y),sepAuthorSimp,sepAffil),all))
+res<-mapply(list,sepAuthorSimp[A],sepAffil[A],SIMPLIFY = F)
+```
+The problems seems to come from the facts that 
+
+1. some of the authors have comma in their name string... (e.g. "Cahill J.F., Jr.")
+1. some of the papers simply do not have any affiliation:
+
+```{r}
+which(datab$Authors.with.affiliations=="")
+```
+
+This means we should not use the separation by ";" for the affiliations but instead look for the author names, separate 
+
+## Another way to extract affiliation by authors
+
+
+First we extract the adress (character number) of the match of the author name in the affiliation string.
+
+```{r}
+#mapply(function(str,seps)strsplit(x=str,split=seps),datab$Authors.with.affiliations,sepAuthorSimp)[1:10]
+#sapply(mapply(function(str,seps)lapply(seps,gregexpr,text=str,fixed=T),datab$Authors.with.affiliations,sepAuthorSimp),length)==sapply(sepAuthorSimp,length)
+charBegAuth <- mapply(function(str,seps)lapply(seps,gregexpr,text=str,fixed=T),datab$Authors.with.affiliations,sepAuthorSimp)
+```
+
+Sometimes 2 authors of the same paper have the same simplified name
+
+```{r}
+refRepAuth<-sapply(sepAuthorSimp,function(x){
+  ref<-integer(length(x))
+  ref[1]<-1
+  if(length(x)>1){
+    for(i in 2:length(x))
+    {ref[i]<-1+sum(x[1:(i-1)]==x[i])}
+  }
+  return(ref)
+  })
+charBegAuth<-mapply(function(docx,docy){mapply(function(authx,authy)authx[[1]][authy],docx,docy)},charBegAuth,refRepAuth)
+names(charBegAuth)<-NULL
+stopifnot(all(sapply(charBegAuth,length)==sapply(sepAuthorSimp,length)))
+stopifnot(all(unlist(sapply(charBegAuth,function(x){if(length(x)==0){return(T)}else{return(order(x)==1:length(x))}}))))
+```
+
+```{r}
+resAffil<-list()
+for(doc in 1:length(sepAuthorSimp))
+{
+  resAffil[[doc]]<-character(length(sepAuthorSimp[[doc]]))
+  if(length(sepAuthorSimp[[doc]])==0){next}
+  names(resAffil[[doc]])<-sepAuthorSimp[[doc]]
+  for(auth in 1:length(sepAuthorSimp[[doc]])){
+    if(charBegAuth[[doc]][auth]==-1){
+      resAffil[[doc]][auth]<-""
+    }else{
+      firstAuth<-auth==1
+      lastAuth<-auth==length(sepAuthorSimp[[doc]])
+      end<-ifelse(lastAuth,nchar(datab$Authors.with.affiliations[doc]),charBegAuth[[doc]][[auth+1]]-1)
+      beg<-charBegAuth[[doc]][[auth]]+nchar(sepAuthorSimp[[doc]][auth])
+      resAffil[[doc]][auth]<-substr(datab$Authors.with.affiliations[doc],beg,end)
+    }
+  }
+}
+resAffil<-lapply(resAffil,function(x)gsub("[[:punct:][:space:]]*$","",gsub("^[[:punct:][:space:]]*","",x)))
+sepAffil<-lapply(resAffil,strsplit,", ")
+```
+
+
+
+
 There are various problems with the separating fields operation here:
 
 * when there are comma in an expression (e.g faculty of plant, animal and ecology)...
-* when there are opening parenthesis
+* when there are opening parenthesis and "," or ";" before ending the parentheses
 
-## Parenthesis problem
+# Parenthesis problem
 
 Concerning the parentheses:
 
@@ -272,6 +351,25 @@ tabNoCountryRef<-data.frame(
 )
 apply(tabNoCountryRef,1,function(x,l)l[[x[1]]][[x[2]]],l=sepAffil)
 ```
+# States
+
+```{r}
+A<-lapply(list_countryAffil,lapply,function(x)which(x)-1)
+potentialStates<-character(0)
+#for(i in 1:length(A))
+#  for(j in 1:length(A[[i]]))
+#    potentialStates<-c(potentialStates,sepAffil[[i]][[j]][A[[i]][[j]]])
+```
+
+
+
+```{r}
+states<-ne_states(returnclass="sf")
+states$name
+which(!states$adm0_a3%in%worldMap_tot$adm0_a3)
+states[!states$geonunit %in% countryNames$string,]$name
+st_drop_geometry(states[states$geonunit %in% countryNames$string,c("name","geonunit","admin","type_en","name_local","postal")])
+```
 
 
 # Cities
@@ -305,10 +403,67 @@ for(i in 1:length(sepAffil)){
   }
 }
 ```
+# Analysis countries and cities
 
 ```{r}
 tabAffil$country<-tabAffil$string%in%countryNames$string
 tabAffil$city<-tabAffil$string%in%cityTab$string
-write.csv(tabAffil,file="../../vegSciLacBib_export/tabAffil.csv")
+doc_auth<-paste(tabAffil$doc,tabAffil$auth,sep="_")
+hasCountry<-tapply(tabAffil$country,doc_auth,any)
+hasCity<-tapply(tabAffil$city,doc_auth,any)
 ```
 
+
+Number of affiliations having country and city:
+
+```{r}
+table(hasCountry,hasCity)
+```
+
+10 examples of not having country:
+
+```{r}
+A<-sample(names(hasCountry)[!hasCountry],10)
+tapply(tabAffil$string[doc_auth%in%A],doc_auth[doc_auth%in%A],paste,collapse=", ")
+```
+
+
+10 examples of not having city:
+
+```{r}
+A<-sample(names(hasCity)[!hasCity],10)
+tapply(tabAffil$string[doc_auth%in%A],doc_auth[doc_auth%in%A],paste,collapse=", ")
+```
+
+
+Note: problems to resolve to get better results:
+
+1. Sometimes we get the city with a postal code (sometimes with the country code)
+1. sometimes we get an address
+1. sometimes we get Cedex
+
+
+## counting the affiliations based on cities and countries
+
+```{r}
+nbCountry<-tapply(tabAffil$country,doc_auth,sum)
+nbCity<-tapply(tabAffil$city,doc_auth,sum)
+
+table(nbCountry==nbCity)
+table(nbCountry)
+table(nbCity)
+more3Countries<-names(nbCountry[nbCountry>3])
+# tapply(tabAffil$string[doc_auth%in%more3Countries],doc_auth[doc_auth%in%more3Countries],paste,collapse=", ")
+
+```
+
+
+
+```{r}
+listUniv<-tabAffil$string[grepl("\\<univ", tabAffil$string,ignore.case = T)]
+```
+
+
+```{r}
+write.csv(tabAffil,file="../../vegSciLacBib_export/tabAffil.csv")
+```

@@ -60,6 +60,46 @@ treatedFullNames <- lapply(sepAuthors,function(x,r1,r2)
 
 
 
+# Relationships between complete author names and author names
+
+```{r}
+length(datab$Authors)==length(treatedFullNames)
+sepAuthorSimp <- strsplit(datab$Authors,"; ")
+all(sapply(sepAuthorSimp,length)==sapply(treatedFullNames,nrow))
+tabAuthComp<-Reduce(rbind,treatedFullNames)
+tabAuthComp$nameSimp<-unlist(sepAuthorSimp)
+lastNameInNameSimp<-apply(tabAuthComp,1,function(x)grepl(x[2],x[5],fixed=T))
+```
+
+It appears that the order in both columns is really always the same!
+
+# Clean extraction
+
+Then it should be easy to extract the names in function of the author ID
+
+```{r}
+require(sqldf)
+extractMajoNames<-by(tabAuthComp,tabAuthComp$authorId,function(tab)
+  {
+    lnfnOrder<-sqldf("SELECT lastName, firstName, count(*) FROM tab ORDER BY count(*) DESC,LENGTH(firstName) DESC LIMIT 1")
+    nbns<-table(tab$nameSimp)
+    nsMaj<-names(nbns)[which.max(nbns)]
+    data.frame(lastName=lnfnOrder$lastName,firstName=lnfnOrder$firstName,nameSimp=nsMaj)
+    
+  })
+tabNamesFinal<-Reduce(rbind,extractMajoNames)
+rownames(tabNamesFinal)<-names(extractMajoNames)
+authIdsDoc<-sapply(treatedFullNames,function(x)x$authorId)
+authDoc<-data.frame(
+  doc=rep(1:length(authIdsDoc),sapply(authIdsDoc,length)),
+  authId=unlist(authIdsDoc),
+  authOrder=unlist(lapply(authIdsDoc[sapply(authIdsDoc,length)>0],function(x)1:length(x))),
+  authNb=rep(sapply(authIdsDoc,length),sapply(authIdsDoc,length)),
+  authSimp=tabAuthComp$nameSimp
+)
+```
+
+
 
 # tests
 
@@ -81,5 +121,4 @@ A[sapply(A,length)>1]
 B<-tapply(allInOne$lastName,allInOne$authorId,unique)
 B[sapply(B,length)>1]
 ```
-
 
