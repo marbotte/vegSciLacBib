@@ -1,0 +1,97 @@
+---
+title: "Managing the document data from the scopus CSV file"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+     df_print: "kable"
+---
+
+
+# Reading the csv file
+```{r}
+fileTot<-"../../Data/SCOPUS/scopus.csv"
+datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
+```
+
+
+# Document Ids
+
+Column `Art..No.`:
+
+```{r}
+sum(datab$Art..No.=="")
+```
+Column 'DOI'
+
+```{r}
+sum(is.na(datab$DOI))
+sum(datab$DOI=="")
+
+table(datab$Document.Type,useNA = "ifany")
+datab[datab$DOI=="",c("DOI","Document.Type","Title")]
+datab$DOI[duplicated(datab$DOI)]
+```
+
+There are 13 papers with empty DOI, most of them are only errata and/or conference papers, but there are errata and conference papers which have their DOI. 
+However there is no repetition of DOI in the table, except the 13 empty DOI.
+
+## Creating id
+
+It seems that the best solution would be to create an id from the first author + year + letter
+
+```{r}
+fa<-gsub(" [-A-ZÁÖÈÅŽØŁ\\.]+(,? Jr.)?I*$","",sapply(strsplit(datab$Authors, "; "),function(x)x[1]),perl = T)
+# fa[order(nchar(fa),decreasing = T)]
+# fa[grep(" ",fa)]
+```
+It appears that it is complicated to extract the last name of the first author.
+Since we did the work in the code for authors, it might be smarter to use this code!
+
+```{r}
+if(file.exists("./authors.RData"))
+{
+  (load("./authors.RData"))
+}else{
+  rmarkdown::render(workOnAuthors_scopusCsv.Rmd)
+  (load("./authors.RData"))
+}
+firstAuthors<-authDoc[authDoc$authOrder==1,c("doc","authId")]
+fa<-rep(NA,nrow(datab))
+fa[firstAuthors$doc]<-tabNamesFinal[firstAuthors$authId,"lastName"]
+fa <- gsub("[[:punct:][:space:]]+","_",fa)
+fa[is.na(fa)]<-"Anonymous"
+py<-datab$Year
+authYear<-paste0(fa,py)
+dupliAuthYear <- duplicated(authYear)
+nbRep <- table(authYear[dupliAuthYear])+1
+resReplacement<-mapply(function(nb,na)list(origin=na,replacement=paste0(na,letters[1:nb])),nbRep,names(nbRep),SIMPLIFY = F)
+all(sapply(resReplacement,function(a,b)length(b[b==a$origin])==length(a$replacement),b=authYear))
+docId<-authYear
+for(i in 1:length(resReplacement))
+{
+  docId[docId == resReplacement[[i]]$origin] <- resReplacement[[i]]$replacement
+}
+docId[grep("[a-z]$",docId)]
+```
+
+# Exporting documentsID
+
+```{r}
+save(docId,file="docId.RData")
+```
+
+
+
+# Preparing pdf download (to be done in bash with sciDownl)
+
+```{r}
+df_id_doi<-na.omit(data.frame(docId,DOI=datab$DOI))
+if(!file.exists("../../vegSciLacBib_export/PDF")){dir.create("../../vegSciLacBib_export/PDF")}
+file.remove("downloadPdf.sh")
+writeLines(paste0("scidownl download --doi \"",df_id_doi$DOI,"\" --out ../../vegSciLacBib_export/PDF/",df_id_doi$docId,".pdf"), con="downloadPdf.sh")
+```
+
+
