@@ -1,0 +1,192 @@
+---
+title: "Managing the abstract data from the scopus CSV file"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+     df_print: "kable"
+---
+
+
+# Reading the csv file
+```{r}
+fileTot<-"../../Data/SCOPUS/scopus.csv"
+datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
+```
+
+# Suppressing last sentence when not part of the text
+
+```{r}
+sort(table(sub("^.*\\. (.+).? ?$","\\1",datab$Abstract,perl=T)),decreasing = T)[1:10]
+# regexCopyright<-"\\.[[:space:]]?(©)|(Copyright).*$"
+# #datab$Abstract[!grepl(regexCopyright,datab$Abstract,perl=T)]
+# modifAbstract<-sub(regexCopyright,"",datab$Abstract,perl=T)
+# hist(nchar(modifAbstract)/nchar(datab$Abstract),nclass=1000)
+# data.frame(modif=modifAbstract[(nchar(modifAbstract)/nchar(datab$Abstract))<0.95],origin=datab$Abstract[(nchar(modifAbstract)/nchar(datab$Abstract))<0.95])
+# data.frame(modif=modifAbstract[(nchar(modifAbstract)/nchar(datab$Abstract))>0.95],origin=datab$Abstract[(nchar(modifAbstract)/nchar(datab$Abstract))>0.95])[1:10,]
+```
+
+
+```{r}
+regexCopyright2<-"\\. ?©"
+findCopy2<-gregexpr(regexCopyright2,datab$Abstract)
+stopifnot(sapply(findCopy2,length)==1)
+w_copy2<-unlist(findCopy2)
+modif2Abstract<-datab$Abstract
+for(i in 1:length(datab$Abstract))
+{
+  if(w_copy2[i]==-1||w_copy2[i]/nchar(datab$Abstract[i])<.85){next}
+  modif2Abstract[i]<-substr(modif2Abstract[i],1,w_copy2[i])
+}
+randomAbstractN<-sample(grep(regexCopyright2,datab$Abstract),5)
+data.frame(origin=datab$Abstract[randomAbstractN],modif=modif2Abstract[randomAbstractN])
+```
+
+
+```{r}
+regexCopyright3<-"\\. ?Copyright"
+findCopy3<-gregexpr(regexCopyright3,datab$Abstract)
+stopifnot(sapply(findCopy3,length)==1)
+w_copy3<-unlist(findCopy3)
+for(i in 1:length(datab$Abstract))
+{
+  if(w_copy3[i]==-1||w_copy3[i]/nchar(modif2Abstract[i])<.9){next}
+  modif2Abstract[i]<-substr(modif2Abstract[i],1,w_copy3[i])
+}
+randomAbstractN<-sample(grep("Copyright",datab$Abstract),5)
+data.frame(origin=datab$Abstract[randomAbstractN],modif=modif2Abstract[randomAbstractN])
+```
+
+
+```{r}
+regexCopyright4<-"\\. ?[0-9]{4} IAVS ‐ the International Association of Vegetation Science"
+sum(grepl(regexCopyright4,modif2Abstract))
+findCopy4<-gregexpr(regexCopyright4,datab$Abstract)
+stopifnot(sapply(findCopy4,length)==1)
+w_copy4<-unlist(findCopy4)
+for(i in 1:length(datab$Abstract))
+{
+  if(w_copy4[i]==-1||w_copy4[i]/nchar(modif2Abstract[i])<.85){next}
+  modif2Abstract[i]<-substr(modif2Abstract[i],1,w_copy4[i])
+}
+randomAbstractN<-sample(grep(regexCopyright4,datab$Abstract),5)
+data.frame(origin=datab$Abstract[randomAbstractN],modif=modif2Abstract[randomAbstractN])
+```
+
+
+```{r}
+datab$Abstract<-modif2Abstract
+sort(table(sub("^.*\\. (.+).? ?$","\\1",datab$Abstract,perl=T)),decreasing = T)[1:10]
+```
+
+
+# Suppressing the word abstract at the beginning
+
+```{r}
+regexAbstract <- "^[[:space:]]*[Aa]bstract[[:space:]]?[[:punct:]]?[[:space:]]*"
+(nbCase<-sum(grepl(regexAbstract,datab$Abstract)))
+A<-grep(regexAbstract,datab$Abstract)[sample(1:nbCase,5)]
+datab$Abstract[A]
+findAbstract<-regexpr(regexAbstract,datab$Abstract)
+#stopifnot(all(sapply(findAbstract,length)==1))
+stopifnot(all(findAbstract%in%c(1,-1)))
+findAbstractOK<-which(findAbstract==1)
+endAbExpr<-attributes(findAbstract)$match.length[findAbstractOK]+1
+for(i in 1:length(endAbExpr))
+{
+  datab$Abstract[findAbstractOK][i]<-substr(datab$Abstract[findAbstractOK][i],endAbExpr,nchar(datab$Abstract[findAbstractOK][i]))
+}
+datab$Abstract[A]
+```
+
+
+
+# Searching fields
+```{r}
+datab$Abstract<-gsub("^[[:space:][:punct:]]*","",datab$Abstract)
+regex<-"\\<[A-Z][[:alpha:]]+\\>: "
+findAbstractFields<-gregexpr(regex,datab$Abstract)
+abstractFields<-list()
+for(i in 1:length(findAbstractFields))
+{
+  if(all(findAbstractFields[[i]]==-1)){next}
+  beg<-findAbstractFields[[i]]
+  end<-beg+attributes(findAbstractFields[[i]])$match.length-1
+  abstractFields[[i]]<-mapply(function(b,e,a)substr(a,b,e),beg,end,a = datab$Abstract[i])
+}
+sort(table(unlist(abstractFields)))
+```
+
+It appears that the existing important fields are:
+
+```{r}
+regexes <- c("Result\\(?s?\\)?: ?","(Material and )?Method\\(?s?\\)?:","Location\\(?s?\\)?:","Conclusion\\(?s?\\)?: ","Question\\(?s?\\)?:","Aim\\(?s?\\)?:","Discussion\\(?s?\\)?: ","Background:","Objective\\(?s?\\)?:","Problem\\(?s?\\)?:","Context:")
+names(regexes) <- c("Results","Methods","Location","Conclusions","Questions","Aims","Discussions","Background","Objectives","Problem","Context")
+findFields <- lapply(regexes,gregexpr,text=datab$Abstract,perl=T)
+matchFields<-sapply(findFields,sapply,function(x)x[1])
+matchFields[matchFields==-1]<-NA
+lengthFields<-sapply(findFields,sapply,function(x)attributes(x)$match.length[1])
+```
+
+Number of fields in the abstracts:
+
+```{r}
+nbFields<-apply(!apply(matchFields,1,is.na),2,sum)
+hist(nbFields)
+```
+
+```{r fig.width=15,fig.height=15}
+par(mfrow=c(4,1))
+barplot(table(nbFields,datab$Year),beside = T,legend=T,col=rainbow(7),border=NA)
+barplot(table(nbFields,datab$Source.title),beside = T,legend=T,col=rainbow(7),border=NA)
+barplot(table(nbFields[datab$Source.title=="Applied Vegetation Science"],datab$Year[datab$Source.title=="Applied Vegetation Science"]),beside = T,legend=T,col=rainbow(7),border=NA,main="Applied Vegetation Science")
+barplot(table(nbFields[datab$Source.title=="Journal of Vegetation Science"],datab$Year[datab$Source.title=="Journal of Vegetation Science"]),beside = T,legend=T,col=rainbow(7),border=NA,main="Journal of Vegetation Science")
+
+```
+
+Are fields beginning in first character:
+
+```{r, warning=F}
+A<-which(apply(matchFields,1,min,na.rm=T)[nbFields>2]!=1)
+datab[nbFields>2,][A,c("Source.title","Title","Year","Abstract")]
+```
+
+# formatting and exporting
+
+```{r}
+rearrangeMatchs<-order(colMeans(matchFields,na.rm=T))
+matchFields<-matchFields[,rearrangeMatchs]
+lengthFields<-lengthFields[,rearrangeMatchs]
+
+
+extractAbstractParts<-matrix(NA,nrow=nrow(matchFields),ncol=ncol(matchFields)+1,dimnames=list(NULL,c("beforeFirstField",colnames(matchFields))))
+for(i in 1:nrow(matchFields))
+{
+  fromFirstCharacter<-!all(is.na(matchFields[i,]))&any(matchFields[i,!is.na(matchFields[i,])]==1)
+  noFields<-sum(is.na(matchFields[i,]))<=2
+  #extractAbstractParts[[i]]$complete<-datab$Abstract[i]
+  if(!noFields)
+  {
+    fields<-sort(na.omit(matchFields[i,]))
+    begContent<-fields+lengthFields[i,names(fields)]
+    if(!fromFirstCharacter){
+      begContent<-c(beforeFirstField=1)
+    }
+    endContent<-c(fields[ifelse(fromFirstCharacter,2,1):length(fields)]-1,nchar(datab$Abstract[i]))
+    names(endContent)<-names(begContent)
+    res<-lapply(names(begContent),function(n,a,b,e){substr(a,b[n],e[n])},a=datab$Abstract[i],b=begContent,e=endContent)
+    names(res)<-names(begContent)
+    res<-lapply(res, gsub,pattern="^[[:space:]]*",replacement="")
+    res<-lapply(res, gsub,pattern="[[:space:]]*$",replacement="")
+    extractAbstractParts[i,names(res)]<-unlist(res)
+  }
+}
+extractAbstractParts=cbind(Complete=datab$Abstract,extractAbstractParts)
+write.csv(extractAbstractParts,file="../../vegSciLacBib_export/tabAbstractParts.csv")
+```
+
+
+
+
