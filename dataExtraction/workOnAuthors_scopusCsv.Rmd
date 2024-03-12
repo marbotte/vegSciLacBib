@@ -97,6 +97,7 @@ authDoc<-data.frame(
   authNb=rep(sapply(authIdsDoc,length),sapply(authIdsDoc,length)),
   authSimp=tabAuthComp$nameSimp
 )
+save(list=c("tabNamesFinal","authDoc"),file="authors.RData")
 ```
 
 

@@ -1,7 +1,7 @@
 Managing the author data from the scopus CSV file
 ================
 Marius Bottin
-2024-03-09
+2024-03-10
 
 - [1 Reading the csv file](#1-reading-the-csv-file)
 - [2 Authors full names and
@@ -139,6 +139,7 @@ authDoc<-data.frame(
   authNb=rep(sapply(authIdsDoc,length),sapply(authIdsDoc,length)),
   authSimp=tabAuthComp$nameSimp
 )
+save(list=c("tabNamesFinal","authDoc"),file="authors.RData")
 ```
 
 # 5 tests
