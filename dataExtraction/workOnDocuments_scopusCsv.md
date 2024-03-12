@@ -1,7 +1,7 @@
 Managing the document data from the scopus CSV file
 ================
 Marius Bottin
-2024-03-10
+2024-03-12
 
 - [1 Reading the csv file](#1-reading-the-csv-file)
 - [2 Document Ids](#2-document-ids)
