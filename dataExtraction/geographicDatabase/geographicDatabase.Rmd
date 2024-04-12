@@ -1,0 +1,753 @@
+---
+title: "Making a geographic database for managing location extraction"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+     df_print: "kable"
+params:
+  dbms: "Postgres"
+---
+
+
+
+
+# Finding and downloading locality database
+
+I have used the package `rnaturalearth` before, but it seems that the package `rgeoboundaries` goes further in the geographic administrative levels (adm2, adm3?).
+Note that it is on development phase and does not seem to be in CRAN, you might want to install it with the package `remote` installation functions.
+
+After looking more in details the package `rgeoboundaries`, it seems that various opensource dataset could be useful:
+
+1. naturalearth (<https://www.naturalearthdata.com/>, available in R through `rnaturalearth`): contains countries and states, and is accompanied by a quite complete dataset concerning names, continents and regions
+1. geoboundaries (<https://www.geoboundaries.org/>, available in R through `rgeoboundaties`): it is quite precise and goes further in terms of administrative levels
+1. gdam (<https://gadm.org/>) I have the feeling it is quite redundant with geoboundaries. It is accessible quite easily through a geopackage (SQLite database), I would tend to prefer this one than the former one
+1. geonames (<https://public.opendatasoft.com/explore/dataset/geonames-all-cities-with-a-population-1000/table/?disjunctive.cou_name_en&sort=name>). The best opensource database I found for cities (should be all cities with more than 1000 inhabitants), quite complete in terms of names in every language
+
+
+# Downloading and loading geographic data
+
+```{r setup}
+require(sf)
+require(RSQLite)
+if("params" %in% ls())
+{
+  dbms<-match.arg(params$dbms,c("Postgres","SQLite"))
+}else{dbms <- "Postgres"}
+st_changeGeomName<-function(sfobj,newName="geom")
+{
+  sf_col<-attr(sfobj,"sf_column")
+  names(sfobj)[names(sfobj)==sf_col]<-newName
+  st_geometry(sfobj)<-newName
+  return(sfobj)
+}
+```
+
+## GeoBoundaries
+
+```{r}
+if(!dir.exists("../../../Data/"))
+{
+  dir.create("../../../Data/")
+}
+if(!dir.exists("../../../Data/Geographic"))
+{
+  dir.create("../../../Data/Geographic")
+}
+if(!file.exists("../../../Data/Geographic/geoBoundariesCGAZ_ADM0.gpkg"))
+{
+download.file("https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/geoBoundariesCGAZ_ADM0.gpkg", destfile = "../../../Data/Geographic/geoBoundariesCGAZ_ADM0.gpkg")
+download.file("https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/geoBoundariesCGAZ_ADM1.gpkg", destfile = "../../../Data/Geographic/geoBoundariesCGAZ_ADM1.gpkg")
+download.file("https://github.com/wmgeolab/geoBoundaries/raw/main/releaseData/CGAZ/geoBoundariesCGAZ_ADM2.gpkg", destfile = "../../../Data/Geographic/geoBoundariesCGAZ_ADM2.gpkg")
+}
+geoBoundaries_adm0<-st_read("../../../Data/Geographic/geoBoundariesCGAZ_ADM0.gpkg")
+geoBoundaries_adm1<-st_read("../../../Data/Geographic/geoBoundariesCGAZ_ADM1.gpkg")
+geoBoundaries_adm2<-st_read("../../../Data/Geographic/geoBoundariesCGAZ_ADM2.gpkg")
+st_crs(geoBoundaries_adm0)<-st_crs(geoBoundaries_adm1)<-st_crs(geoBoundaries_adm2)<-4326
+geoBoundaries_db<-dbConnect(drv=SQLite(),"../../../Data/Geographic/geoBoundariesCGAZ_ADM0.gpkg")
+
+```
+
+
+
+## GADM
+
+```{r}
+if(!dir.exists("../../../Data/"))
+{
+  dir.create("../../../Data/")
+}
+if(!dir.exists("../../../Data/Geographic"))
+{
+  dir.create("../../../Data/Geographic")
+}
+if(!file.exists("../../../Data/Geographic/gadm_410-gpkg.zip"))
+{
+download.file("https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip", destfile = "../../../Data/Geographic/gadm_410-gpkg.zip",method = "wget",quiet=T)
+}
+if(!file.exists("../../../Data/Geographic/gadm_410.gpkg"))
+{
+A<-unzip("../../../Data/Geographic/gadm_410-gpkg.zip")
+file.copy(A,"../../../Data/Geographic/")
+file.remove(A)
+}
+if(!file.exists("../../../Data/Geographic/gadm_410-gdb.zip"))
+{
+  download.file("https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gdb.zip", destfile = "../../../Data/Geographic/gadm_410-gdb.zip",method = "wget",quiet=T)
+}
+if(!file.exists("../../../Data/Geographic/gadm_410.gdb"))
+{
+A<-unzip("../../../Data/Geographic/gadm_410-gdb.zip")
+file.rename("gadm_410.gdb","../../../Data/Geographic/gadm_410.gdb")
+}
+st_layers("../../../Data/Geographic/gadm_410.gdb")
+gadm_gdb<-st_read("../../../Data/Geographic/gadm_410.gdb","gadm")
+sf_col<-attr(gadm_gdb,"sf_column")
+names(gadm_gdb)[names(gadm_gdb)==sf_col]<-"geom"
+st_geometry(gadm_gdb)<-"geom"
+colnames(gadm_gdb)<-tolower(colnames(gadm_gdb))
+gadm<-st_read("../../../Data/Geographic/gadm_410.gpkg")
+gadm_db<-dbConnect(drv=SQLite(),"../../../Data/Geographic/gadm_410.gpkg")
+```
+
+
+## Natural earth
+
+Naturalearth is available through the package rnaturalearth, but the way they organize the dataset and the query makes it difficult to use for our particular objectives, so maybe downloading the sqlite will make it easier...
+
+```{r}
+if(!dir.exists("../../../Data/"))
+{
+  dir.create("../../../Data/")
+}
+if(!dir.exists("../../../Data/Geographic"))
+{
+  dir.create("../../../Data/Geographic")
+}
+if(!file.exists("../../../Data/Geographic/natural_earth_vector.sqlite.zip"))
+{
+download.file("https://naciscdn.org/naturalearth/packages/natural_earth_vector.sqlite.zip", destfile = "../../../Data/Geographic/natural_earth_vector.sqlite.zip",method = "wget",quiet=T)
+}
+if(!file.exists("../../../Data/Geographic/natural_earth_vector.sqlite"))
+{
+A<-unzip("../../../Data/Geographic/natural_earth_vector.sqlite.zip")
+file.copy(A,"../../../Data/Geographic/")
+file.remove(A)
+}
+ne_sf<-st_read("../../../Data/Geographic/natural_earth_vector.sqlite")
+ne_db<-dbConnect(SQLite(),"../../../Data/Geographic/natural_earth_vector.sqlite")
+```
+
+## Geonames
+
+```{r}
+if(!dir.exists("../../../Data/"))
+{
+  dir.create("../../../Data/")
+}
+if(!dir.exists("../../../Data/Geographic"))
+{
+  dir.create("../../../Data/Geographic")
+}
+if(!file.exists("../../../Data/Geographic/geonames-all-cities-with-a-population-1000.geojson"))
+{
+download.file("https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/geonames-all-cities-with-a-population-1000/exports/geojson?lang=en&timezone=America%2FBogota", destfile = "../../../Data/Geographic/geonames-all-cities-with-a-population-1000.geojson",method = "wget",quiet=T)
+}
+require(geojsonR)
+if(!file.exists("../../../Data/Geographic/geonames.RData"))
+{
+  geonames<-st_read("../../../Data/Geographic/geonames-all-cities-with-a-population-1000.geojson")
+  save(geonames,file="../../../Data/Geographic/geonames.RData")
+}else{
+  load("../../../Data/Geographic/geonames.RData")
+}
+```
+
+## World languages
+
+```{r}
+if(!dir.exists("../../../Data/"))
+{
+  dir.create("../../../Data/")
+}
+if(!dir.exists("../../../Data/Geographic"))
+{
+  dir.create("../../../Data/Geographic")
+}
+if(!file.exists("../../../Data/Geographic/soc_071_world_languages.zip"))
+{
+download.file("https://wri-public-data.s3.amazonaws.com/resourcewatch/soc_071_world_languages.zip", destfile = "../../../Data/Geographic/soc_071_world_languages.zip",method = "wget",quiet=T)
+}
+if(!file.exists("../../../Data/Geographic/World_Languages.shp"))
+{
+A<-unzip("../../../Data/Geographic/soc_071_world_languages.zip")
+lapply(A,file.copy,to="../../../Data/Geographic/")
+file.remove(A)
+}
+wl<-st_read("../../../Data/Geographic/World_Languages.shp")
+wl<-st_changeGeomName(wl)
+colnames(wl)<-tolower(colnames(wl))
+```
+
+# Organizing the database
+
+The idea would be to make a database in which we could put together all the names of the geographic objects that we might want to find in our dataset fields.
+For it to be useful we need to be able to:
+
+* understand the hierarchy of objects (region<country<state<department<city, sovereignt, )
+* be able to link them to polygons or coordinates
+* managing language and note which language is spoken locally (to be able to filter the local language and English in our search), as well as whether the alphabet is latin
+
+## Creating a Spatialite database
+
+For this we will create a SQLite + Spatialite database. 
+It might seem weird but the best way I found to create an empty spatialite database is QGIS (look on the left panel, a spatialite connection will be proposed to you, right click on it and choose "Create a new database").
+
+```{r}
+fileGeogDb<-"../../../Data/Geographic/geog_db.sqlite"
+existsDb<-file.exists(fileGeogDb)
+if(dbms=="SQLite"){
+if(!existsDb){stop("Please create an empty spatialite database in this folder:\n", normalizePath(dirname(fileGeogDb)), "\n and call it : ",basename(fileGeogDb),"\nYou may use the software you prefer, but QGIS works well!")}
+geog <- dbConnect(SQLite(),"../../../Data/Geographic/geog_db.sqlite")
+}
+```
+
+## Importing the data into postgres
+
+If the code here is run with the postgres option, you need to create a postgres database with the `postgis` extension, and the `unaccent` extension hosted in "localhost" and called worldGeog, with a configuration which does not require a password to be send for connecting (since the code is publicly shared).
+
+
+```{r eval=(dbms=="Postgres")}
+require(RPostgreSQL)
+geog<- dbConnect(PostgreSQL(),dbname="worldGeog")
+```
+
+
+```{r eval=(dbms=="Postgres")}
+schemas<-dbGetQuery(geog,"SELECT DISTINCT schema_name FROM information_schema.schemata;")$schema_name
+```
+
+### Geoboundaries
+
+```{r eval=(dbms=="Postgres")}
+if(!"geoboundaries"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA geoboundaries AUTHORIZATION CURRENT_USER;")}
+if(!"global_adm0"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='geoboundaries'")$table_name)
+{st_write(geoBoundaries_adm0,dsn=geog,layer=c("geoboundaries","global_adm0"))
+dbSendStatement(geog,"UPDATE geoboundaries.global_adm0 SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+dbSendStatement(geog,"CREATE INDEX geoboundaries_global_adm0_geom_idx ON geoboundaries.global_adm0 USING GIST(geom)")  
+}
+if(!"global_adm1"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='geoboundaries'")$table_name)
+{st_write(geoBoundaries_adm1,dsn=geog,layer=c("geoboundaries","global_adm1"))
+dbSendStatement(geog,"UPDATE geoboundaries.global_adm1 SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+dbSendStatement(geog,"CREATE INDEX geoboundaries_global_adm1_geom_idx ON geoboundaries.global_adm1 USING GIST(geom)")  
+}
+if(!"global_adm2"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='geoboundaries'")$table_name)
+{st_write(geoBoundaries_adm2,dsn=geog,layer=c("geoboundaries","global_adm2"))
+dbSendStatement(geog,"UPDATE geoboundaries.global_adm2 SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+dbSendStatement(geog,"CREATE INDEX geoboundaries_global_adm2_geom_idx ON geoboundaries.global_adm2 USING GIST(geom)")  
+}
+```
+
+
+### GADM
+
+```{r eval=(dbms=="Postgres")}
+if(!"gadm"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA gadm AUTHORIZATION CURRENT_USER;")}
+if(!"gadm_tot"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='gadm'")$table_name)
+{st_write(gadm_gdb,dsn=geog,layer=c("gadm","gadm_tot"))
+dbSendStatement(geog,"UPDATE gadm.gadm_tot SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+dbSendStatement(geog,"CREATE INDEX gadm_gadm_tot_geom_idx ON gadm.gadm_tot USING GIST(geom)")
+dbSendStatement(geog,paste(readLines("./gadm_management.sql"),collapse="\n"))
+}
+#colText<-dbGetQuery(geog,"SELECT column_name FROM information_schema.columns WHERE table_name='gadm_tot' AND data_type='text'")$column_name
+#cat(paste0(colText,"~'Null'"),sep=" OR ")
+```
+
+### NaturalEarth
+
+1We will not import antartic claims
+
+
+
+```{r eval=(dbms=="Postgres")}
+#A small correction in the database:
+#dbSendStatement(ne_db,"UPDATE geometry_columns SET srid=4326 WHERE srid IS NULL")
+tables<-dbListTables(ne_db)
+tablesOK<-tables[!tables%in%c("geometry_columns","spatial_ref_sys","sqlite_sequence","ne_10m_admin_0_names","ne_10m_admin_1_states_provinces_lines","ne_10m_admin_2_counties_lines","ne_10m_admin_2_label_points","ne_10m_rivers_north_america","ne_50m_admin_0_scale_rank","ne_50m_rivers_lake_centerlines") & grepl("_10m_",tables) & ! grepl("^ne_10m_admin_0_countries_[a-z]{3}",tables) & ! grepl("label",tables)]
+tablesOK_spat<-tablesOK[tablesOK %in% dbReadTable(ne_db,"geometry_columns")$f_table_name]
+#for(i in tablesOK_spat){st_read(ne_db,i)}
+import_ne<-lapply(tablesOK_spat,st_read,dsn=ne_db)
+names(import_ne)<-tablesOK_spat
+for(i in 1:length(import_ne)){st_crs(import_ne[[i]])<-4326}
+import_ne<-lapply(import_ne,st_changeGeomName)
+if(!"ne"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA ne AUTHORIZATION CURRENT_USER;")}
+tables_ne<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='ne'")$table_name
+for(i in names(import_ne))
+{
+  nameTable<-i
+  if(nameTable %in% tables_ne){next}
+  st_write(import_ne[[i]],dsn = geog,layer=c("ne",nameTable))
+  dbSendStatement(geog,paste0("UPDATE ne.",nameTable," SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)"),)
+  dbSendStatement(geog,paste0("CREATE INDEX IF NOT EXISTS ne_",nameTable,"_geom_idx ON ne.",nameTable," USING GIST(geom)"))
+}
+```
+
+### Geonames
+
+```{r eval=(dbms=="Postgres")}
+geonames<-st_changeGeomName(geonames)
+if(!"geonames"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA geonames AUTHORIZATION CURRENT_USER;")}
+tables_gn<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='geonames'")$table_name
+if(!"cities"%in%tables_gn)
+{
+  geonames$alternate_names<-sapply(geonames$alternate_names,paste,collapse=", ")
+  st_write(geonames,dsn = geog,layer=c("geonames","cities"))
+  dbSendStatement(geog,"UPDATE geonames.cities SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+  dbSendStatement(geog,paste0("CREATE INDEX IF NOT EXISTS geonames_cities_geom_idx ON geonames.cities USING GIST(geom)"))
+}
+
+```
+
+### World languages
+
+```{r eval=(dbms=="Postgres")}
+if(!"wl"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA wl AUTHORIZATION CURRENT_USER;")}
+tables_wl<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='wl'")$table_name
+if(!"world_languages"%in%tables_wl)
+{
+  st_write(wl,dsn = geog,layer=c("wl","world_languages"))
+  dbSendStatement(geog,"UPDATE wl.world_languages SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
+  dbSendStatement(geog,paste0("CREATE INDEX IF NOT EXISTS wl_world_languages_geom_idx ON wl.world_languages USING GIST(geom)"))
+}
+
+```
+
+
+
+## Map units adm0
+
+The best way to have a base map for countries and regions is to use the "ne_50m_admin_0_map_subunits" from naturalearth.
+
+### Regions
+
+#### natural earth
+Concerning regions, we have various interesting classification of regions in `naturalearth`:
+
+Regions and subregions UN:
+
+```{r}
+countries_ne<-dbReadTable(ne_db,"ne_10m_admin_0_countries")
+table(countries_ne$region_un)
+region_un<-countries_ne$region_un
+subregions<-countries_ne$subregion
+tapply(subregions,region_un,unique)
+```
+
+Region WB (It is interesting for us because  it  includes Latin America & Caribbean)
+
+```{r}
+regions_wb<-countries_ne$region_wb
+table(regions_wb)
+```
+
+
+
+#### gadm
+gadm uses a more classical definition of continents:
+
+
+```{r}
+table(gadm$CONTINENT)
+tapply(gadm$SUBCONT,gadm$CONTINENT,table)
+```
+However there is no Central America in GADM. From Alaska to Panama, it is considered North America:
+
+```{r}
+sort(table(gadm$COUNTRY[gadm$CONTINENT=="North America"]))
+```
+
+#### Creating our region tables
+
+Creating the main schema:
+
+```{r eval=(dbms=="Postgres")}
+if(! "main" %in% dbGetQuery(geog,"SELECT schema_name FROM information_schema.schemata")$schema_name)
+{dbSendStatement(geog,"CREATE SCHEMA main AUTHORIZATION CURRENT_USER;")}
+mainTables<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")$table_name
+```
+
+##### Continent, regions, subregions and countries
+
+Creating and populating the tables
+
+```{r eval=(dbms=="Postgres")}
+if(! "continent" %in% mainTables)
+{
+dbSendStatement(geog, paste(readLines("./adm0_regions_countries.sql"),collaspse="\n"))
+}
+```
+
+**Note on countries and sovereignities**
+
+First we need to list the potential sovereignities in natural earth maps
+
+Note:
+
+* su_a3 is unique and may serve as a PRIMARY KEY for subunits
+* iso_a3 does not correspond to the countries
+* To get the real country code, we need to join with the country table by names
+
+We' ll use a definition of countries which might be open to debate, where United Kingdom, Kosovo, Northern Cyprus and Israel are included, but not Antartica, Hong-Kong, Palestina or Western Sahara (I am sure you could find other debatable examples in the data)...
+
+
+
+
+```{sql connection=geog}
+SELECT name,sovereignt,type,sov_a3, iso_a3, type 
+FROM ne.ne_10m_admin_0_countries  
+WHERE ( (name=sovereignt OR name_long=sovereignt OR formal_en = sovereignt OR name_en=sovereignt) AND type IN ('Sovereign country','Country','Sovereignty') OR name IN ('Kosovo','Israel'))
+ORDER BY sovereignt
+```
+
+
+
+At some point we will have to correct that:
+
+```{sql connection=geog, max.print=NA}
+SELECT name, name_long, formal_en, name_en FROM main.country c LEFT JOIN ne.ne_10m_admin_0_countries USING (name) WHERE c.name ~ '\.'
+```
+
+which also might cause problems in sovereignity attribution such as:
+
+
+```{sql connection=geog}
+WITH names AS(
+SELECT name,c.cd_country
+FROM main.country c
+LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
+UNION
+SELECT name_en,c.cd_country
+FROM main.country c
+LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
+UNION
+SELECT formal_en,c.cd_country
+FROM main.country c
+LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
+)
+SELECT s.name,s.sovereignt,n.cd_country
+FROM ne.ne_10m_admin_0_map_subunits s
+LEFT JOIN names n ON s.sovereignt=n.name
+WHERE n.cd_country IS NULL
+ORDER BY s.sovereignt
+```
+
+
+#### Geographic units
+
+Small issue:
+```{sql connection=geog}
+SELECT name, ARRAY_AGG(adm0_a3) adm0_a3,ARRAY_AGG(su_a3) su_a3, count(*) FROM ne.ne_10m_admin_0_map_subunits GROUP BY name HAVING count(*)>1;
+```
+
+Will be resolved through a st_union (dissolve) process. For Russia, naturalearth had separated the european and Asian regions of Russia, for South Korea, they separated the islands and the mainland.
+
+```{r}
+if(!"adm0_geounit" %in% dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{
+dbSendStatement(geog,"ALTER TABLE ne.ne_10m_admin_0_map_subunits DROP COLUMN IF EXISTS cd_geounit")
+dbSendStatement(geog,paste(readLines("./adm0_geounit.sql"),collapse="\n"))
+}
+```
+
+## Languages
+
+
+Now that we have the countries and territories, we can join them with the language database
+
+
+**************************************
+
+**Note**:
+
+While it would have been cleaner to work on the language and character sets, the process of integrating official languages and their corresponding character sets seems very complicated for not much results.
+
+
+**For now the plan will be: integrating english, french, spanish, german, portuguese, italian, neerlandese excluding all strings which does not have at least a "[a-z]" character to filter the latin alphabet.**
+
+So we keep the first test made in the subsections, but we will not use them for now!
+
+****************************
+
+
+### simplified solution
+
+(english, french, spanish, german, portuguese, italian, dutch)
+
+```{r}
+if(!"lang" %in% dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{
+dbSendStatement(geog,paste(readLines("./lang.sql"),collapse = "\n"))
+}
+```
+
+### List of languages and character sets
+
+There is a file on github with the language codes, however I am not sure it is worth managing all this information:
+
+```{r}
+if(!file.exists("../../../Data/Geographic/language-codes-full.csv"))
+{
+  download.file("https://github.com/datasets/language-codes/blob/master/data/language-codes-full.csv",destfile = "../../../Data/Geographic/language-codes-full.csv")
+}
+```
+
+```{sql connection=geog}
+WITH a as(
+SELECT first_offi language, count(*) nb_offi--,1 AS lang_ord
+FROM wl.world_languages
+WHERE first_offi IS NOT NULL
+GROUP BY first_offi
+UNION ALL
+SELECT second_off language, count(*) nb_offi--,2 AS lang_ord
+FROM wl.world_languages
+WHERE second_off IS NOT NULL
+GROUP BY second_off
+UNION ALL
+SELECT third_offi  language, count(*) nb_offi--,3 AS lang_ord
+FROM wl.world_languages
+WHERE third_offi IS NOT NULL 
+GROUP BY third_offi
+)
+SELECT language, SUM(nb_offi)
+FROM a
+GROUP BY language
+ORDER BY sum(nb_offi) DESC
+```
+
+
+
+### Relation with countries
+
+Checking whether we can join the countries:
+
+```{sql connection=geog}
+WITH names AS(
+SELECT name,c.cd_geounit
+FROM main.adm0_geounit c
+LEFT JOIN ne.ne_10m_admin_0_map_subunits nec ON c.geounit=nec.name
+UNION
+SELECT subunit,c.cd_geounit
+FROM main.adm0_geounit c
+LEFT JOIN ne.ne_10m_admin_0_map_subunits nec ON c.geounit=nec.name
+UNION
+SELECT name_en,c.cd_geounit
+FROM main.adm0_geounit c
+LEFT JOIN ne.ne_10m_admin_0_map_subunits nec ON c.geounit=nec.name
+UNION
+SELECT formal_en,c.cd_geounit
+FROM main.adm0_geounit c
+LEFT JOIN ne.ne_10m_admin_0_map_subunits nec ON c.geounit=nec.name
+), a AS(
+SELECT country, sovereignt, cd_geounit
+FROM wl.world_languages wl
+LEFT JOIN names n ON wl.country=n.name
+), b AS(
+SELECT DISTINCT ON (cd_geounit) cd_geounit,country
+FROM a
+WHERE country IS NOT NULL AND cd_geounit IS NOT NULL
+)
+SELECT cd_geounit,geounit FROM main.adm0_geounit WHERE NOT cd_geounit IN (SELECT cd_geounit FROM b)
+```
+
+So the join is complicated, we will have to divide the cases
+
+CASE 1: the languages are all the same in a "sovereignt"
+
+```{sql connection=geog}
+With a AS(
+  SELECT 
+    sovereignt,
+    COUNT(DISTINCT first_offi),
+    COUNT(DISTINCT second_off),
+    COUNT(DISTINCT third_offi) 
+  FROM wl.world_languages 
+  GROUP BY sovereignt 
+  HAVING 
+    COUNT(DISTINCT first_offi)<2 AND
+    COUNT(DISTINCT second_off)<2 AND
+    COUNT(DISTINCT third_offi)<2
+)
+SELECT COUNT(DISTINCT sovereignt)
+FROM a
+```
+
+
+
+
+CASE 2: in a same sovereignt, different territories may have different languages:
+```{sql connection=geog}
+With a AS(
+  SELECT 
+    sovereignt,
+    COUNT(DISTINCT first_offi),
+    COUNT(DISTINCT second_off),
+    COUNT(DISTINCT third_offi) 
+  FROM wl.world_languages 
+  GROUP BY sovereignt 
+  HAVING 
+    COUNT(DISTINCT first_offi)>1 OR
+    COUNT(DISTINCT second_off)>1 OR
+    COUNT(DISTINCT third_offi)>1
+)
+SELECT sovereignt
+FROM a
+```
+
+
+
+<!--
+
+```sql connection=geog
+SELECT g.geounit, wl.country 
+FROM wl.world_languages wl
+LEFT JOIN main.adm0_geounit g ON ST_intersects(g.the_geom,wl.geom)
+LEFT JOIN main.country c ON g.sovereign=
+ORDER BY wl.country
+```
+
+-->
+
+## Regions, country and geounit names
+
+
+```{r}
+if(!"country_names" %in% dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name | ! "adm0_names"  %in% dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{
+  dbSendStatement(geog,paste(readLines(con = "./country_geounit_names_ne.sql"),collapse="\n"))
+}
+```
+
+## Relations between adm0 tables
+
+
+```{r}
+if(!"adm0_to_geounit"%in%dbListTables(geog))
+{dbSendStatement(geog,paste(readLines("./relations_adm0.sql"),collapse="\n"))}
+```
+
+
+
+## Adm1
+
+
+```{r adm1}
+if(!"adm1"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./adm1.sql"),collapse="\n"))}
+```
+
+
+## Adm2
+
+
+```{r adm2}
+if(!"adm2"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./adm2.sql"),collapse="\n"))}
+```
+
+## Adm3
+
+
+```{r adm3}
+if(!"adm3"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./adm3.sql"),collapse="\n"))}
+```
+
+
+## Adm4
+
+
+```{r adm4}
+if(!"adm4"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./adm4.sql"),collapse="\n"))}
+```
+
+
+## Adm5
+
+
+```{r adm5}
+if(!"adm5"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./adm5.sql"),collapse="\n"))}
+```
+
+
+## Island Info 
+For following treatments, it is useful to understand which parts are islands or continental:
+
+```{r islands}
+if(!"adm0_geounit_island_info"%in%dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
+{dbSendStatement(geog,paste(readLines("./Islands_info.sql"),collapse="\n"))}
+```
+
+
+
+# Relations with natural earth
+
+
+
+```{r}
+dbSendStatement(geog,paste(readLines("./ne_relations_adm1_adm2.sql"),collapse="\n"))
+```
+
+
+# Readapt categories
+
+It is difficult to get clear categories in terms of administrative boundaries, but since GADM and natural earth tried to get a complete earth map in each level, we can have something clearer by removing this constraint:
+
+
+```{r}
+dbSendStatement(geog,paste(readLines("managing_types_adm1.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("managing_types_adm2.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("managing_types_adm3.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("managing_types_adm4.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("managing_types_adm5.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("managing_types_adm0_final.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("final_organization.sql"),collapse="\n"))
+```
+
+Finally, we can load the data in R, and export it:
+
+```{r}
+municipality<-sf::read_sf(geog,"municipality",geometry_column='the_geom')
+district<-sf::read_sf(geog,"district",geometry_column='the_geom')
+department<-sf::read_sf(geog,"department",geometry_column='the_geom')
+substate<-sf::read_sf(geog,"substate",geometry_column='the_geom')
+state<-sf::read_sf(geog,"state",geometry_column='the_geom')
+geounit<-sf::read_sf(geog,"geounit",geometry_column='the_geom')
+
+nameTables<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name ~ 'names$'")$table_name
+nameList<-lapply(nameTables,dbReadTable,conn=geog)
+names(nameList)<-nameTables
+
+save(list=c("municipality","district","department","substate","state","geounit","nameTables"),file="../../../vegSciLacBib_export/geographicDatabase.RData")
+rm(list=c("municipality","district","department","substate","state","geounit","nameTables"))
+gc()
+```
+
+
+# TO DO YET
+
+* names: how to do when there is no name but the equivalent (higher or lower) has one
+
+
+## Closing the door before leaving
+
+```{r}
+dbDisconnect(ne_db)
+dbDisconnect(gadm_db)
+dbDisconnect(geoBoundaries_db)
+dbDisconnect(geog)
+```
+
