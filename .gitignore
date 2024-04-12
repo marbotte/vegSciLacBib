@@ -45,6 +45,7 @@ vignettes/*.pdf
 
 # Python environment
 *_env/
+*Env/
 
 # Excel files
 */*.xlsx

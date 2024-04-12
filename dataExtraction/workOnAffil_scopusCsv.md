@@ -1,7 +1,7 @@
 Managing the affiliation data from the scopus CSV file
 ================
 Marius Bottin
-2024-03-09
+2024-03-12
 
 - [1 Reading the csv file](#1-reading-the-csv-file)
 - [2 The affiliation column](#2-the-affiliation-column)
@@ -23494,26 +23494,26 @@ A<-sample(names(hasCountry)[!hasCountry],10)
 tapply(tabAffil$string[doc_auth%in%A],doc_auth[doc_auth%in%A],paste,collapse=", ")
 ```
 
-    ##                                                                                                                                  4549_1 
-    ##                                                      "Dwept. of Ecology & Evolutionary Biology Rice University, Houston, TX 77251, USa" 
-    ##                                                                                                                                  4549_2 
-    ##                                                      "Dwept. of Ecology & Evolutionary Biology Rice University, Houston, TX 77251, USa" 
-    ##                                                                                                                                  4716_1 
-    ##                                                                    "Institute of Applied Ecology, Kostelec Nad Cernymi Lesy, CS-281 63" 
-    ##                                                                                                                                  4739_1 
-    ##                                             "Botanical Institute, Czechoslovak Academy of Sciences Cs -, Praha, 252 43, Pruhonice near" 
-    ##                                                                                                                                  4770_1 
-    ##                              "Botanical Institute of the Czechoslovak Academy of Sciences, Prague, CS-252 43, 43 Průhonice near Prague" 
-    ##                                                                                                                                  4776_2 
-    ##                                                           "Botanical Institute, Czechoslovak Academy of Sciences, Průhonice, CS-252 43" 
-    ##                                                                                                                                  4776_3 
-    ##                                              "Botanical Institute, Slovak Academy of Sciences, Bratislava, CS-842 23, Sienkiewiczova 1" 
-    ##                                                                                                                                  4776_4 
-    ##                                                           "Botanical Institute, Czechoslovak Academy of Sciences, Průhonice, CS-252 43" 
-    ##                                                                                                                                  4861_2 
-    ## "Laboratory of Biogeocoenology, Institute of Soil Science and Agrochemistry, Siberian Branch, Academy of Sciences, Novosibirsk, 630099" 
-    ##                                                                                                                                  4891_2 
-    ##                                                        "Botanical Institute of the Czechoslovak Academy of Sciences, Pruhonice, 252 43"
+    ##                                                                                                                                                          2902_1 
+    ##                                                                                                    "School of Geography Politics and Sociology, Daysh Building" 
+    ##                                                                                                                                                          2902_3 
+    ##                                                                                                    "School of Geography Politics and Sociology, Daysh Building" 
+    ##                                                                                                                                                          3318_2 
+    ##                                                                          "Institute for Biological Research, Siniša Stanković, 11060 Belgrade, 29 Novembra 142" 
+    ##                                                                                                                                                          4323_1 
+    ##                                                                                                                     "Department of Rangeland Ecosystem Science" 
+    ##                                                                                                                                                          4383_2 
+    ##                                                                                                                               "Department of Ecological Botany" 
+    ##                                                                                                                                                          4549_1 
+    ##                                                                              "Dwept. of Ecology & Evolutionary Biology Rice University, Houston, TX 77251, USa" 
+    ##                                                                                                                                                          4716_1 
+    ##                                                                                            "Institute of Applied Ecology, Kostelec Nad Cernymi Lesy, CS-281 63" 
+    ##                                                                                                                                                          4744_1 
+    ## "Biological Faculty, University of South Bohemia & Department of Biomathematics, Czechoslovak Academy of Sciences, Ceske Budejovice, CS-370 05, Branǐsovská 31" 
+    ##                                                                                                                                                          4744_2 
+    ##                                                                          "Botanical Institute, Czechoslovak Academy of Sciences, Prahy, CS-252 43, Průhonice u" 
+    ##                                                                                                                                                          4891_1 
+    ##                                                                                                            "Silesian Museum, Opava, 746 46, Vitezného unora 35"
 
 10 examples of not having city:
 
@@ -23522,26 +23522,26 @@ A<-sample(names(hasCity)[!hasCity],10)
 tapply(tabAffil$string[doc_auth%in%A],doc_auth[doc_auth%in%A],paste,collapse=", ")
 ```
 
-    ##                                                                                                                                                                                                                 2111_3 
-    ##                                               "Laboratoire d'Ecologie Alpine (CNRS UMR 5553), Station Alpine Joseph Fourier (UMS-UJF-CNRS 2925), Université Joseph Fourier, Grenoble Cedex 09, F-38042, BP 53, France" 
-    ##                                                                                                                                                                                                                 2715_5 
-    ##                                                                                                                    "Université de Bordeaux, Ecologie des Communautés, UMR INRA 1202, Biogeco, F-33405 Talence, France" 
-    ##                                                                                                                                                                                                                  328_1 
-    ##                                                                                             "Lendület Seed Ecology Research Group, Institute of Ecology and Botany, Centre for Ecological Research, Vácrátót, Hungary" 
-    ##                                                                                                                                                                                                                 3474_1 
-    ##                                                                                                                     "Vegetation Ecology, Department of Ecology, TU München, D-85350 Freising, Am Hochanger 6, Germany" 
-    ##                                                                                                                                                                                                                 3522_2 
-    ##                                                                                                                          "Biological Institute, Graduate School of Science, Tohoku University, Sendai 980-8578, Japan" 
-    ##                                                                                                                                                                                                                 3577_1 
-    ##                                                                                                                      "Yokohama Institute for Earth Sciences, Yokohama 236-0001, 3173-25 Showamachi, Kanazawaku, Japan" 
-    ##                                                                                                                                                                                                                 3741_1 
-    ##                                                                                                                       "Department of Plant Taxonomy, Eotvos Lorand University, Budapest 1083, Ludovika tér 2, Hungary" 
-    ##                                                                                                                                                                                                                 3946_5 
-    ##                                                                                                                            "Nature and National Parks Protection Authority, Jerusalem 94467, 78 Yirmeyahu St., Israel" 
-    ##                                                                                                                                                                                                                 4105_2 
-    ## "Department of Ecological Botany, Uppsala University, SE-752 36 Uppsala, Villavägen 14, Sweden, Department of Mathematics, Natural and Computer Sciences, University College Gävle-Sandviken, SE-801 76 Gävle, Sweden" 
-    ##                                                                                                                                                                                                                  982_7 
-    ##                                                                                                                               "The Czech Academy of Sciences, Institute of Botany, Brno and Průhonice, Czech Republic"
+    ##                                                                                                                                                 1493_2 
+    ##                      "Faculty of Environmental Sciences, Czech University of Life Sciences, Kamýcká 1176, Prague 6- Suchdol, CZ-16521, Czech Republic" 
+    ##                                                                                                                                                 2040_1 
+    ## "Departamento de Biología Vegetal y Ecología, Facultad de Ciencia y Tecnología, Universidad del País Vasco, Leioa E-48940, Barrio Sarriena s/n, Spain" 
+    ##                                                                                                                                                 2458_2 
+    ##                         "Department of Plant Ecology, Evolutionary Biology Centre (EBC), Uppsala University, SE-75236 Uppsala, Norbyvägen 18D, Sweden" 
+    ##                                                                                                                                                 2481_3 
+    ##                                                           "Department of Geography, University of Bonn, D-53115 Bonn, Meckenheimer Allee 166, Germany" 
+    ##                                                                                                                                                 2764_1 
+    ##                                    "Institute of Ecological Science, Department of Systems Ecology, De Boelelaan 1085, Amserdam, 1081 HV, Netherlands" 
+    ##                                                                                                                                                 3739_2 
+    ##              "Applied Vegetation Dynamics Lab., School of Biological Sciences, University of Liverpool, Liverpool L69 3BX, PO Box 147, United Kingdom" 
+    ##                                                                                                                                                 4089_3 
+    ##                                              "ESA CNRS 5023 Ecologie Eaux Douces, Université Claude Bernard, Lyon 1, 69622 Villeurbanne Cedex, France" 
+    ##                                                                                                                                                 4118_3 
+    ##                                                        "Institute of Botany, Acad. of Sci. of the Czech Republic, CZ-252 43 Průhonice, Czech Republic" 
+    ##                                                                                                                                                 4186_1 
+    ##                       "Departamento de Biología Vegetal y Ecología, Facultad de Biología, Universidad de Sevilla, 41080 Sevilla, Apartado 1095, Spain" 
+    ##                                                                                                                                                 4346_2 
+    ##   "Reforestation and Tropical Forest Management Project, Reforestation Technology Center, Banjarbaru, 70711, P.O. Box 65 Jl. Sei Ulin 28 B, Indonesia"
 
 Note: problems to resolve to get better results:
 

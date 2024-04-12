@@ -93,5 +93,43 @@ if(!file.exists("../../vegSciLacBib_export/PDF")){dir.create("../../vegSciLacBib
 file.remove("downloadPdf.sh")
 writeLines(paste0("scidownl download --doi \"",df_id_doi$DOI,"\" --out ../../vegSciLacBib_export/PDF/",df_id_doi$docId,".pdf"), con="downloadPdf.sh")
 ```
+pass 2:
 
+```{r}
+alreadyDownloaded<-gsub("\\.pdf","",dir("../../vegSciLacBib_export/PDF"))
+df_id_doi2 <- df_id_doi[!df_id_doi$docId%in%alreadyDownloaded,]
+file.remove("downloadPdf_pass2.sh")
+writeLines(paste0("scidownl download --doi \"",df_id_doi2$DOI,"\" --out ../../vegSciLacBib_export/PDF/",df_id_doi2$docId,".pdf"), con="downloadPdf_pass2.sh")
+```
+
+It is not very efficient, so we might want to check with the python functions whether we can get more papers, so let's write the id and doi of the missing papers in a csv file
+
+```{r}
+write.csv(df_id_doi2,file="../../vegSciLacBib_export/id_doi_missing.csv")
+```
+
+# Other method
+
+For an opensource paper it seems that the url to download is:
+https://onlinelibrary.wiley.com/doi/pdfdirect/10.1111/jvs.13200?download=true
+```{r}
+system("firefox https://onlinelibrary.wiley.com/doi/pdfdirect/10.1111/jvs.13200?download=true")
+```
+
+Example of non-open-access file:
+
+```{r}
+datab$DOI[datab$Open.Access == "" & !docId %in% alreadyDownloaded][1]
+
+```
+it seems that in this case, through institutional access, it becomes:
+https://onlinelibrary.wiley.com/doi/pdfdirect/10.1111/avsc.12768?download=true
+So, exactly the same!
+
+
+A start would be to use it to do:
+
+```{r}
+lapply(paste0("firefox https://onlinelibrary.wiley.com/doi/pdfdirect/",df_id_doi2$DOI,"?download=true"),system)
+```
 

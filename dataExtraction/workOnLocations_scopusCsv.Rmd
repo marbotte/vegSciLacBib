@@ -1,0 +1,74 @@
+---
+title: "Managing the location data from the scopus CSV file and the fields from the abstracts"
+author: "Marius Bottin"
+date: "`r Sys.Date()`"
+output: 
+  github_document:
+     number_sections: true
+     toc: true
+     df_print: "kable"
+---
+
+The idea here is to work on extracting locations from the abstracts (see <./workOnAbstracts_scopusCsv.md> to check the work done on extracting abstract fields).
+
+In order to be able to run the code from this document, it is important to run first the <./workOnAbstracts_scopusCsv.Rmd> first
+
+```{r}
+if(!file.exists(./workOnAbstracts_scopusCsv.md))
+{rmarkdown::render("./workOnAbstracts_scopusCsv.Rmd")}
+```
+
+The objective is to extract informations from the location field of the abstract, if the location field does not exist, then we search information on the whole abstract.
+
+The information we should try to get is:
+* the region of the world
+* the country
+* the state
+* the municipality
+* the coordinates of the study site
+
+Of course it is important to search particularly the states from the determined country, municipalities from the country/state etc.
+
+Finding the words could be done in that order:
+
+1. location field of the abstract
+1. title
+1. keywords
+1. complete abstract
+
+# Reading the csv file
+
+General data:
+
+```{r}
+fileTot<-"../../Data/SCOPUS/scopus.csv"
+datab <- read.csv(fileTot, h = T, row.names = NULL,sep=",")
+```
+
+Data extracted from the abstract:
+
+```{r}
+fileAbstract<-"../../vegSciLacBib_export/tabAbstractParts.csv"
+dataa<-read.csv(fileAbstract,header = T,row.names = 1 ,sep=",")
+```
+
+# Spatial location database
+
+## Finding and downloading locality database
+
+I have used the package `rnaturalearth` before, but it seems that the package `rgeoboundaries` goes further in the geographic administrative levels (adm2, adm3?).
+Note that it is on development phase and does not seem to be in CRAN, you might want to install it with the package `remote` installation functions.
+
+After looking more in details the package `rgeoboundaries`, it seems that various opensource dataset could be useful:
+
+1. naturalearth (<https://www.naturalearthdata.com/>, available in R through `rnaturalearth`): contains countries and states, and is accompanied by a quite complete dataset concerning names, continents and regions
+1. geoboundaries (<https://www.geoboundaries.org/>, available in R through `rgeoboundaties`): it is quite precise and goes further in terms of administrative levels
+1. gdam (<https://gadm.org/>) I have the feeling it is quite redundant with geoboundaries. It is accessible quite easily through a geopackage (SQLite database), I would tend to prefer this one than the former one
+1. geonames (<https://public.opendatasoft.com/explore/dataset/geonames-all-cities-with-a-population-1000/table/?disjunctive.cou_name_en&sort=name>). The best opensource database I found for cities (should be all cities with more than 1000 inhabitants), quite complete in terms of names in every language
+
+
+
+
+
+## Regions
+

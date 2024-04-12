@@ -300,6 +300,8 @@ tabAffil<-data.frame(
 )
 ```
 
+# countries
+
 One easy thing to do which could help us make sense of the data here would be to recognize all country fields. Then we could maybe have an idea of the number of affiliations by authors...
 That would mean downloading a dataset that contains all country names, in various languages in case!
 
