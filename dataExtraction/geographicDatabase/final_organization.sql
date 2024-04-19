@@ -232,7 +232,7 @@ WHERE (rs.ref).level_ref=0
 INSERT INTO substate(substate,type_verbatim,cd_sov,cd_geounit,cd_state,continent,region,subregion,wb_region,ref,the_geom)
 SELECT a1.adm1 substate,COALESCE(a1.type_part_verbatim,a1.type_part), g.cd_sov,g.cd_geounit,sup_s.cd_state,g.continent,g.region,g.subregion,g.wb_region,rs.ref,a1.the_geom
 FROM ref_substate rs
-LEFT JOIN main.adm1 a1 ON (rs.ref).cd_ref::int=a1.cd_adm1
+LEFT JOIN main.adm1 a1 ON (rs.ref).cd_ref=a1.cd_adm1::text
 LEFT JOIN geounit g ON a1.cd_geounit=g.cd_geounit
 LEFT JOIN state sup_s ON (rs.sup).cd_cat_ref=1 AND rs.sup=sup_s.ref
 LEFT JOIN substate ss ON (
@@ -241,16 +241,29 @@ LEFT JOIN substate ss ON (
 WHERE (rs.ref).level_ref=1 AND (rs.sup).cd_cat_ref=1 AND ss.cd_substate IS NULL
 ;
 
-INSERT INTO substate(substate,type_verbatim,cd_geounit,cd_state,continent,region,subregion,wb_region,ref,the_geom)
-SELECT a1.adm1 substate, COALESCE(a1.type_part_verbatim,a1.type_part),g.cd_sov,g.cd_geounit,sup_s.cd_state,g.continent,g.region,g.subregion,g.wb_region,rs.ref,a1.the_geom
+INSERT INTO substate(substate,type_verbatim,cd_sov,cd_geounit,continent,region,subregion,wb_region,ref,the_geom)
+SELECT a1.adm1 substate,COALESCE(a1.type_part_verbatim,a1.type_part), g.cd_sov,g.cd_geounit,g.continent,g.region,g.subregion,g.wb_region,rs.ref,a1.the_geom
 FROM ref_substate rs
-LEFT JOIN main.adm1 a1 ON (rs.ref).cd_ref::int=a1.cd_adm1
+LEFT JOIN main.adm1 a1 ON (rs.ref).cd_ref=a1.cd_adm1::text
 LEFT JOIN geounit g ON a1.cd_geounit=g.cd_geounit
-LEFT JOIN state sup_s ON (rs.sup).cd_cat_ref=1 AND rs.sup=sup_s.ref
 LEFT JOIN substate ss ON (
     ((ss.ref).level_ref=0 AND rs.cd_geounit=(ss.ref).cd_ref)
     OR ((ss.ref).level_ref=1 AND rs.cd_adm1::text=(ss.ref).cd_ref))
 WHERE (rs.ref).level_ref=1 AND (rs.sup).cd_cat_ref=0 AND ss.cd_substate IS NULL
+;
+
+
+INSERT INTO substate(substate,type_verbatim,cd_sov,cd_geounit,cd_state,continent,region,subregion,wb_region,ref,the_geom)
+SELECT a2.adm2 substate, COALESCE(a2.type_part_verbatim,a2.type_part),g.cd_sov,g.cd_geounit,sup_s.cd_state,g.continent,g.region,g.subregion,g.wb_region,rs.ref,a2.the_geom
+FROM ref_substate rs
+LEFT JOIN main.adm2 a2 ON (rs.ref).cd_ref::int=a2.cd_adm2
+LEFT JOIN main.adm1 a1 ON a2.cd_adm1=a1.cd_adm1
+LEFT JOIN geounit g ON a2.cd_geounit=g.cd_geounit
+LEFT JOIN state sup_s ON (rs.sup).cd_cat_ref=1 AND rs.sup=sup_s.ref
+LEFT JOIN substate ss ON (
+    ((ss.ref).level_ref=0 AND rs.cd_geounit=(ss.ref).cd_ref)
+    OR ((ss.ref).level_ref=1 AND rs.cd_adm1::text=(ss.ref).cd_ref))
+WHERE (rs.ref).level_ref=2 AND (rs.sup).cd_cat_ref=0 AND ss.cd_substate IS NULL
 ;
 ------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------
@@ -1449,6 +1462,15 @@ CREATE TABLE municipality_names
     ref t_ref,
     ref_name t_ref_name,
     trust int NOT NULL DEFAULT 10,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean,
     UNIQUE(cd_municipality,ref_name)
 );
 
@@ -1509,6 +1531,15 @@ CREATE TABLE district_names
     ref t_ref,
     ref_name t_ref_name,
     trust int NOT NULL DEFAULT 10,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean,
     UNIQUE(cd_district,ref_name)
 );
 
@@ -1569,6 +1600,15 @@ CREATE TABLE department_names
     ref t_ref,
     ref_name t_ref_name,
     trust int NOT NULL DEFAULT 10,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean,
     UNIQUE(cd_department,ref_name)
 );
 
@@ -1629,6 +1669,15 @@ CREATE TABLE substate_names
     ref t_ref,
     ref_name t_ref_name,
     trust int NOT NULL DEFAULT 10,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean,
     UNIQUE(cd_substate,ref_name)
 );
 
@@ -1689,6 +1738,15 @@ CREATE TABLE state_names
     ref t_ref,
     ref_name t_ref_name,
     trust int NOT NULL DEFAULT 10,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean,
     UNIQUE(cd_state,ref_name)
 );
 
@@ -1737,6 +1795,39 @@ LEFT JOIN main.adm5_names n5 ON rm.cd_adm5=n5.cd_adm5
 WHERE rm.cd_adm5 IS NOT NULL
 ;
 
+DROP TABLE IF EXISTS geounit_names;
+CREATE TABLE geounit_names
+(
+    cd_name serial PRIMARY KEY,
+    cd_geounit char(3) REFERENCES geounit(cd_geounit),
+    string text,
+    orig text,
+    name_type text,
+    cd_lang character(2),
+    locale boolean,
+    ref t_ref ,
+    trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
+);
+
+INSERT INTO geounit_names(cd_geounit,string,orig,name_type,cd_lang,locale,ref)
+SELECT cd_geounit,string,orig,name_type,cd_lang,locale,(0,0,cd_geounit)::t_ref
+FROM main.adm0_names cn
+WHERE string IS NOT NULL
+;
+UPDATE geounit_names SET formal=(name_type='formal');
+UPDATE geounit_names SET long=(name_type='long');
+UPDATE geounit_names SET sort=(name_type='sort');
+
 DROP TABLE IF EXISTS sovereign_names;
 CREATE TABLE sovereign_names
 (
@@ -1748,6 +1839,16 @@ CREATE TABLE sovereign_names
     locale boolean,
     ref t_ref ,
     trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
 );
 
 INSERT INTO sovereign_names(cd_sov,string,orig,name_type,cd_lang,locale,ref)
@@ -1779,6 +1880,16 @@ CREATE TABLE continent_names
     name_type text,
     cd_lang character(2),
     trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
 );
 INSERT INTO continent
 SELECT cd_continent,continent FROM main.continent;
@@ -1786,6 +1897,8 @@ SELECT cd_continent,continent FROM main.continent;
 INSERT INTO continent_names(cd_continent,continent,string,cd_lang)
 SELECT cd_continent,continent,continent,'en' FROM continent;
 
+UPDATE continent_names
+SET preferred=true, abbrev=false, formal=false,long=false,short=false,colloquial=false,historic=false;
 
 DROP TABLE IF EXISTS wb_region CASCADE;
 CREATE TABLE wb_region
@@ -1805,12 +1918,25 @@ CREATE TABLE wb_region_names
     name_type text,
     cd_lang character(2),
     trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
 );
 INSERT INTO wb_region
 SELECT cd_wb_region,wb_region FROM main.wb_region;
 
 INSERT INTO wb_region_names(cd_wb_region,wb_region,string,cd_lang)
 SELECT cd_wb_region,wb_region,wb_region,'en' FROM wb_region;
+
+UPDATE wb_region_names
+SET preferred=true, abbrev=false, formal=false,long=false,short=false,colloquial=false,historic=false;
 
 DROP TABLE IF EXISTS region CASCADE;
 CREATE TABLE region
@@ -1829,6 +1955,16 @@ CREATE TABLE region_names
     name_type text,
     cd_lang character(2),
     trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
 );
 INSERT INTO region(region)
 SELECT DISTINCT region FROM main.subregion;
@@ -1836,6 +1972,8 @@ SELECT DISTINCT region FROM main.subregion;
 INSERT INTO region_names(cd_region,region,string,cd_lang)
 SELECT DISTINCT cd_region,region,region,'en' FROM region;
 
+UPDATE region_names
+SET preferred=true, abbrev=false, formal=false,long=false,short=false,colloquial=false,historic=false;
 
 
 DROP TABLE IF EXISTS subregion CASCADE;
@@ -1857,6 +1995,16 @@ CREATE TABLE subregion_names
     name_type text,
     cd_lang character(2),
     trust int NOT NULL DEFAULT 10
+    ,
+    preferred boolean,
+    abbrev boolean,
+    abbrev_type varchar(50),
+    formal boolean,
+    long boolean,
+    short boolean,
+    sort boolean,
+    colloquial boolean,
+    historic boolean
 );
 INSERT INTO subregion
 SELECT cd_subregion,subregion,cd_region
@@ -1866,6 +2014,30 @@ LEFT JOIN region USING (region);
 INSERT INTO subregion_names(cd_subregion,subregion,string,cd_lang)
 SELECT cd_subregion,subregion,subregion,'en' FROM subregion;
 
+UPDATE subregion_names
+SET preferred=true, abbrev=false, formal=false,long=false,short=false,colloquial=false,historic=false;
+
+UPDATE state_names SET sort=true WHERE name_type='sort';
+UPDATE state_names SET long=true WHERE name_type='long';
+UPDATE state_names SET formal=true WHERE name_type='formal';
+UPDATE state_names SET abbrev=true, abbrev_type='state long' WHERE name_type='state abbv long';
+UPDATE state_names SET abbrev=true, abbrev_type='state 2' WHERE name_type='state abbv 2';
+
+UPDATE substate_names SET sort=true WHERE name_type='sort';
+UPDATE substate_names SET long=true WHERE name_type='long';
+UPDATE substate_names SET formal=true WHERE name_type='formal';
+
+UPDATE department_names SET sort=true WHERE name_type='sort';
+UPDATE department_names SET long=true WHERE name_type='long';
+UPDATE department_names SET formal=true WHERE name_type='formal';
+
+UPDATE district_names SET sort=true WHERE name_type='sort';
+UPDATE district_names SET long=true WHERE name_type='long';
+UPDATE district_names SET formal=true WHERE name_type='formal';
+
+UPDATE municipality_names SET sort=true WHERE name_type='sort';
+UPDATE municipality_names SET long=true WHERE name_type='long';
+UPDATE municipality_names SET formal=true WHERE name_type='formal';
 ----------------------------------------------------------------------
 ----------------------------------------------------------------------
 ----------------------- INDEXES --------------------------------------
@@ -2060,3 +2232,9 @@ CREATE INDEX department_region_fk_idx ON region(region);
 CREATE INDEX department_subregion_fk_idx ON subregion(subregion);
 CREATE INDEX department_wb_region_fk_idx ON wb_region(wb_region);
 
+CREATE INDEX IF NOT EXISTS sovereign_ref_idx ON sovereign((ref));
+CREATE INDEX IF NOT EXISTS state_ref_idx ON state((ref));
+CREATE INDEX IF NOT EXISTS substate_ref_idx ON substate((ref));
+CREATE INDEX IF NOT EXISTS department_ref_idx ON department((ref));
+CREATE INDEX IF NOT EXISTS district_ref_idx ON district((ref));
+CREATE INDEX IF NOT EXISTS district_ref_idx ON municipality((ref));

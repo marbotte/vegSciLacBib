@@ -51,7 +51,12 @@ ORDER BY a4.type_part,equivalent--count(DISTINCT cd_adm4) DESC
 ;
 */
 WITH a AS(
-SELECT cd_adm4,CASE WHEN a4.cd_adm3 IS NULL THEN NULL WHEN a4.equi_adm3 IS NULL THEN false WHEN a4.equi_adm3=a3.cd_adm3 THEN true END equivalent ,a3.cd_cat_part cd_cat_part_sup,sovereign
+SELECT cd_adm4,
+    CASE
+        WHEN a4.cd_adm3 IS NULL THEN NULL
+        WHEN a4.equi_adm3 IS NULL THEN false
+        WHEN a4.equi_adm3=a3.cd_adm3 THEN true
+    END equivalent ,a3.cd_cat_part cd_cat_part_sup,sovereign
 FROM main.adm4 a4
 LEFT JOIN main.adm3 a3 USING(cd_adm3,cd_geounit)
 LEFT JOIN main.adm0_geounit a0 USING (cd_geounit)
@@ -62,6 +67,7 @@ SET cd_cat_part=
     CASE
         WHEN type_part IN ('Cell','Commune','Commune (same as level 3)','Municipality','National Park','Parish','Rural Commune','Sub-prefecture','Town','Union','Urban Commune','Urban Community','Village','Village development committee','Ward','Sovereign territories','Sovereign territory') AND cd_cat_part_sup<5 THEN 5
         WHEN type_part IN ('Cell','Commune','Commune (same as level 3)','Municipality','National Park','Parish','Rural Commune','Sub-prefecture','Town','Union','Urban Commune','Urban Community','Village','Village development committee','Ward','Sovereign territories','Sovereign territory') AND cd_cat_part_sup>=5 THEN 6
+        WHEN type_part IN ('Cell','Commune','Commune (same as level 3)','Municipality','National Park','Parish','Rural Commune','Sub-prefecture','Town','Union','Urban Commune','Urban Community','Village','Village development committee','Ward','Sovereign territories','Sovereign territory') AND cd_cat_part_sup IS NULL THEN 5
         WHEN type_part IS NULL AND cd_cat_part_sup>=5 THEN 6
         WHEN type_part IS NULL AND sovereign='MDG' THEN 5
         WHEN type_part IS NULL AND cd_cat_part_sup<5 THEN 5
@@ -81,7 +87,7 @@ SET cd_cat_part=6
 WHERE adm4 ~ '[Aa]rrondissement';
 
 
-
+SELECT count(*) FROM main.adm4 WHERE cd_cat_part IS NULL;
 
 
 

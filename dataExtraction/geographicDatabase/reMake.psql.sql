@@ -21,3 +21,5 @@ DROP TABLE IF EXISTS gadm.adm0_to_geounit CASCADE;
 \i managing_types_adm5.sql
 \i managing_types_adm0_final.sql
 \i final_organization.sql
+\i geonames.sql
+VACUUM FULL VERBOSE ANALYSE;

@@ -11,7 +11,9 @@ VALUES
 ('pt','Portuguese'),
 ('de','German'),
 ('nl','Dutch'),
-('it','Italian');
+('it','Italian'),
+('99','Other');
+
 CREATE TABLE main.country_lang
 (
   cd_country char(3) REFERENCES main.country(cd_country) NOT NULL,
