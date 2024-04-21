@@ -43,6 +43,10 @@ st_changeGeomName<-function(sfobj,newName="geom")
   st_geometry(sfobj)<-newName
   return(sfobj)
 }
+sqlizeNames <- function(x)
+{
+  gsub("^[-_.0-9]*","",gsub("\\_?([A-Z]{1,3})","_\\L\\1",gsub("^([A-Z]+)","\\L\\1",x,perl=T),perl=T))
+}
 ```
 
 ## GeoBoundaries
@@ -295,17 +299,20 @@ for(i in names(import_ne))
 ```
 
 ### Geonames
+Note: somehow rstudio made me lose part of the code I had written to change column names and table names, probably a conflict with git...
+So if we change the geonames.RData file, we will lose everything!
 
 ```{r eval=(dbms=="Postgres")}
-geonames<-st_changeGeomName(geonames)
 if(!"geonames"%in%schemas){dbSendStatement(geog,"CREATE SCHEMA geonames AUTHORIZATION CURRENT_USER;")}
 tables_gn<-dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='geonames'")$table_name
-if(!"cities"%in%tables_gn)
+if(!"all_countries"%in%tables_gn)
 {
-  geonames$alternate_names<-sapply(geonames$alternate_names,paste,collapse=", ")
-  st_write(geonames,dsn = geog,layer=c("geonames","cities"))
-  dbSendStatement(geog,"UPDATE geonames.cities SET geom=ST_MakeValid(geom) WHERE NOT ST_ISVALID(geom)")
-  dbSendStatement(geog,paste0("CREATE INDEX IF NOT EXISTS geonames_cities_geom_idx ON geonames.cities USING GIST(geom)"))
+  tables_geonames<-ls(pattern="^geonames")
+  tables_geonames_sqlNames<- sqlizeNames(gsub("^geonames_","",tables_geonames))
+  for(i in 1:length(tables_geonames))
+  {
+    dbWriteTable(geog,c("geonames",tables_geonames_sqlNames[i]),get(tables_geonames[i]))
+  }
 }
 
 ```
@@ -415,51 +422,6 @@ ORDER BY sovereignt
 
 At some point we will have to correct that:
 
-```{sql connection=geog, max.print=NA}
-SELECT name, name_long, formal_en, name_en FROM main.country c LEFT JOIN ne.ne_10m_admin_0_countries USING (name) WHERE c.name ~ '\.'
-```
-
-which also might cause problems in sovereignity attribution such as:
-
-
-```{sql connection=geog}
-WITH names AS(
-SELECT name,c.cd_country
-FROM main.country c
-LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
-UNION
-SELECT name_en,c.cd_country
-FROM main.country c
-LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
-UNION
-SELECT formal_en,c.cd_country
-FROM main.country c
-LEFT JOIN ne.ne_10m_admin_0_countries nec USING (name)
-)
-SELECT s.name,s.sovereignt,n.cd_country
-FROM ne.ne_10m_admin_0_map_subunits s
-LEFT JOIN names n ON s.sovereignt=n.name
-WHERE n.cd_country IS NULL
-ORDER BY s.sovereignt
-```
-
-
-#### Geographic units
-
-Small issue:
-```{sql connection=geog}
-SELECT name, ARRAY_AGG(adm0_a3) adm0_a3,ARRAY_AGG(su_a3) su_a3, count(*) FROM ne.ne_10m_admin_0_map_subunits GROUP BY name HAVING count(*)>1;
-```
-
-Will be resolved through a st_union (dissolve) process. For Russia, naturalearth had separated the european and Asian regions of Russia, for South Korea, they separated the islands and the mainland.
-
-```{r}
-if(!"adm0_geounit" %in% dbGetQuery(geog,"SELECT table_name FROM information_schema.tables WHERE table_schema='main'")$table_name)
-{
-dbSendStatement(geog,"ALTER TABLE ne.ne_10m_admin_0_map_subunits DROP COLUMN IF EXISTS cd_geounit")
-dbSendStatement(geog,paste(readLines("./adm0_geounit.sql"),collapse="\n"))
-}
-```
 
 ## Languages
 
@@ -715,6 +677,7 @@ dbSendStatement(geog,paste(readLines("managing_types_adm4.sql"),collapse="\n"))
 dbSendStatement(geog,paste(readLines("managing_types_adm5.sql"),collapse="\n"))
 dbSendStatement(geog,paste(readLines("managing_types_adm0_final.sql"),collapse="\n"))
 dbSendStatement(geog,paste(readLines("final_organization.sql"),collapse="\n"))
+dbSendStatement(geog,paste(readLines("geonames.sql"),collapse="\n"))
 ```
 
 Finally, we can load the data in R, and export it:
