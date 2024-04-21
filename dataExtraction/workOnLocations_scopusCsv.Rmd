@@ -14,7 +14,7 @@ The idea here is to work on extracting locations from the abstracts (see <./work
 In order to be able to run the code from this document, it is important to run first the <./workOnAbstracts_scopusCsv.Rmd> first
 
 ```{r}
-if(!file.exists(./workOnAbstracts_scopusCsv.md))
+if(!file.exists("./workOnAbstracts_scopusCsv.md"))
 {rmarkdown::render("./workOnAbstracts_scopusCsv.Rmd")}
 ```
 
@@ -54,7 +54,6 @@ dataa<-read.csv(fileAbstract,header = T,row.names = 1 ,sep=",")
 
 # Spatial location database
 
-## Finding and downloading locality database
 
 I have used the package `rnaturalearth` before, but it seems that the package `rgeoboundaries` goes further in the geographic administrative levels (adm2, adm3?).
 Note that it is on development phase and does not seem to be in CRAN, you might want to install it with the package `remote` installation functions.
@@ -67,8 +66,31 @@ After looking more in details the package `rgeoboundaries`, it seems that variou
 1. geonames (<https://public.opendatasoft.com/explore/dataset/geonames-all-cities-with-a-population-1000/table/?disjunctive.cou_name_en&sort=name>). The best opensource database I found for cities (should be all cities with more than 1000 inhabitants), quite complete in terms of names in every language
 
 
+Actually this work became huge and all is done in a postgis database (see <./geographicDatabase>), and in particular <./geographicDatabase/geographicDatabase.md>.
+
+# geographic data and names
+
+The database, when all the code is applied from the geographicDatabase folder, should be managed locally in your computer, however this is a huge code, thousands of code lines, more than 2 days of calculation with a need for more than 20Go RAM...
+
+Therefore, you may simply ask us for the data in a RData file (automatically exported at the end of the code).
+However, since I have the database working in my computer, I should use the possibilities offered by this system!
+
+
+In my case, the most efficient strategy might be to put the paper data in a shared database with the geographic location... We'll see!
 
 
 
-## Regions
+```{r}
+load("./docId.RData")
+rownames(dataa)<-rownames(datab)<-docId
+tabForLocaExtract<-cbind(dataa$Location,datab$Title,datab$Author.Keywords,datab$Index.Keywords,abstract=dataa$Complete)
+
+```
+
+
+
+
+
+
+
 
